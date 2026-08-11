@@ -363,7 +363,7 @@ function onDragEnd() {
     <!-- The chip row adds a band above the grid, so the fixed height has to give
          it back or the last row slides under the bottom nav. -->
     <div
-      class="flex flex-col gap-4 overflow-y-auto pb-nav md:flex-row md:flex-wrap md:justify-center"
+      class="flex flex-col gap-4 overflow-y-auto pb-nav md:flex-row md:flex-wrap md:justify-center md:items-start"
       :style="{ height: availableCategories.length ? 'calc(100dvh - 286px)' : 'calc(100dvh - 240px)' }"
     >
       <article
