@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+/* Height of the fixed bottom tab bar plus the iOS home-indicator inset. Any
+   layout sized from 100dvh has to give this back, or its last row sits behind
+   the bar. */
+:root {
+  --nav-clear: calc(2.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Scroll and pan, never zoom: 'pan-x pan-y' is 'auto' minus pinch- and
+   double-tap-zoom. Ancestors intersect with descendants, so the court's
+   stricter touch-action: none still wins where it applies. */
+html,
+body {
+  touch-action: pan-x pan-y;
+}
+
+body {
+  margin: 0;
+  background: theme('colors.ink.900');
+  color: theme('colors.chalk');
+  font-family: theme('fontFamily.body');
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Athletic display lettering for headings / scores */
+.font-stencil {
+  font-family: theme('fontFamily.display');
+  letter-spacing: 0.01em;
+}
+
+/* Hide native number input spinners in the stat sheet */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition
+    focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rim
+    disabled:cursor-not-allowed disabled:opacity-40;
+}
+.btn-primary {
+  @apply btn bg-rim text-white hover:brightness-110;
+}
+.btn-ghost {
+  @apply btn border border-ink-600 bg-ink-800 text-chalk hover:border-ink-500 hover:bg-ink-700;
+}
+.btn-danger {
+  @apply btn border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20;
+}
+
+.input {
+  @apply w-full rounded-xl border border-ink-600 bg-ink-800 px-3 py-2.5 text-sm text-chalk
+    placeholder:text-ink-500 focus:border-ink-500 focus:outline-none;
+}
+.label {
+  @apply mb-1.5 block text-xs font-semibold uppercase tracking-widest text-ink-500;
+}
+.card {
+  @apply rounded-2xl border border-ink-700/60 bg-ink-800;
+}
+
+/* The court is a drawing surface, not a document: no text selection, no iOS
+   callout menu, and no browser touch gestures (double-tap zoom above all)
+   stealing strokes. Set on the container, not just the <svg>, so the band
+   around a letterboxed court behaves the same as the court itself. */
+.court-surface {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Bottom padding for viewport-sized scroll containers: lets the last row scroll
+   clear of the tab bar instead of stopping behind it. */
+.pb-nav {
+  padding-bottom: var(--nav-clear);
+}
+
+.boxscore-shotchart-container {
+  height: calc(100dvh - 210px - var(--nav-clear))
+}
+
+.boxscore, .shotchart-container {
+  height: 50%
+}
+
+.shotchart {
+  height: calc((100dvh - 250px) / 2 - var(--nav-clear))
+}
+
+@media (min-width: 768px) {
+  .shotchart {
+    height: calc((100dvh - 350px) / 2 - var(--nav-clear))
+  }
+}
+
+@media (min-width: 1024px) {
+  .shotchart-container {
+    height: calc(100dvh - 230px - var(--nav-clear))
+  }
+
+  .boxscore {
+    height: fit-content
+  }
+
+  .shotchart {
+    height: calc(100dvh - 282px - var(--nav-clear))
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
