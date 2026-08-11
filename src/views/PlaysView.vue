@@ -363,13 +363,13 @@ function onDragEnd() {
     <!-- The chip row adds a band above the grid, so the fixed height has to give
          it back or the last row slides under the bottom nav. -->
     <div
-      class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-y-auto pb-nav"
+      class="flex flex-col gap-4 overflow-y-auto pb-nav md:flex-row md:flex-wrap md:justify-center"
       :style="{ height: availableCategories.length ? 'calc(100dvh - 286px)' : 'calc(100dvh - 240px)' }"
     >
       <article
         v-for="p in sortedFiltered"
         :key="p.id"
-        class="card cursor-grab overflow-hidden active:cursor-grabbing h-[375px] py-1"
+        class="card cursor-grab flex-shrink-0 overflow-hidden active:cursor-grabbing py-1"
         :class="draggingId === p.id ? 'opacity-40 ring-2 ring-rim' : ''"
         draggable="true"
         @dragstart="onDragStart($event, p)"
@@ -377,7 +377,7 @@ function onDragEnd() {
         @dragend="onDragEnd"
       >
         <div class="pointer-events-none w-2/3 mx-auto overflow-hidden bg-court-wood rounded-lg">
-          <CourtCanvas :model-value="p.diagram" :editable="false" :total-phases="phaseCount(p)" />
+          <CourtCanvas :model-value="p.diagram" :editable="false" :auto-height="true" :total-phases="phaseCount(p)" />
         </div>
         <div class="p-3">
           <div class="flex items-start justify-between gap-2">

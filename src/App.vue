@@ -7,7 +7,7 @@ const { isAuthenticated } = useAuth()
 </script>
 
 <template>
-  <main class="mx-auto max-w-screen-xl px-4 pb-16">
+  <main class="mx-auto max-w-screen-xl px-4 pb-16 pt-4">
     <RouterView />
   </main>
   <!-- The tab bar navigates to gated routes, so it stays hidden on the login screen. -->

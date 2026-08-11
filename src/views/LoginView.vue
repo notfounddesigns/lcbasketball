@@ -93,13 +93,10 @@ async function submit() {
 </script>
 
 <template>
-  <div class="flex min-h-[100dvh] flex-col items-center justify-center py-10">
+  <div class="flex h-[100dvh] flex-col items-center justify-center py-10 overflow-y-auto">
     <div class="w-full max-w-sm">
-      <header class="mb-8 text-center">
-        <img src="/LCLogo-Alt.png" alt="LC Basketball" class="mx-auto mb-3 w-56" />
-        <p class="mt-1 text-sm text-ink-500">
-          {{ isSignUp ? 'Create a coaching account' : '' }}
-        </p>
+      <header class="mb-3 text-center">
+        <img src="/LCLogo-Alt.png" alt="LC Basketball" class="mx-auto mb-3 w-48" />
       </header>
 
       <div
