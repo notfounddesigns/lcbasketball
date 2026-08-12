@@ -1,38 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { Play, PracticePlan } from '@/types'
+import type { Play } from '@/types'
 import { usePlays } from '@/composables/usePlays'
-import { usePracticePlan } from '@/composables/usePracticePlan'
 import { useConfirm } from '@/composables/useConfirm'
-import { formatDuration, formatPlanDate, blockTitle, totalMinutes } from '@/lib/practice-utils'
 import { PLAY_CATEGORIES } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import PlayAnimator from '@/components/PlayAnimator.vue'
-import PracticePlanModal from '@/components/PracticePlanModal.vue'
-import PracticePlanViewer from '@/components/PracticePlanViewer.vue'
-import { PencilIcon, DocumentDuplicateIcon, EyeIcon, PlayIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { PencilIcon, DocumentDuplicateIcon, PlayIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
 const { plays, loading, error, fetchPlays, deletePlay, duplicatePlay } = usePlays()
-const {
-  plans,
-  loading: plansLoading,
-  error: plansError,
-  fetchPlans,
-  deletePlan,
-} = usePracticePlan()
 const { confirm } = useConfirm()
 
-// ---- tabs: playbook / scouting / practice plans ----
-type Tab = 'playbook' | 'scouting' | 'practice'
+// ---- tabs: playbook / scouting ----
+type Tab = 'playbook' | 'scouting'
 const activeTab = ref<Tab>('playbook')
 const search = ref('')
 
 const tabLabels: Record<Tab, string> = {
   playbook: 'Playbook',
   scouting: 'Scouting',
-  practice: 'Practice',
 }
 
 const tabPlays = computed(() =>
@@ -84,66 +72,7 @@ const filteredPlays = computed(() => {
 
 onMounted(() => {
   fetchPlays()
-  fetchPlans()
 })
-
-// ---- practice plans ----
-const filteredPlans = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return plans.value
-  return plans.value.filter((plan) => {
-    const haystack = [
-      formatPlanDate(plan.planned_for),
-      plan.planned_for ?? '',
-      plan.name ?? '',
-      plan.notes ?? '',
-      ...(plan.items ?? []).map((i) => `${i.label ?? ''} ${i.play?.name ?? ''}`),
-    ]
-      .join(' ')
-      .toLowerCase()
-    return haystack.includes(q)
-  })
-})
-
-// null = closed, undefined-plan = "create new", plan = "edit that plan"
-const planModalOpen = ref(false)
-const editingPlan = ref<PracticePlan | null>(null)
-const viewingPlanId = ref<string | null>(null)
-
-// Track by id so the viewer picks up edits made while it's open.
-const viewingPlan = computed(() => plans.value.find((p) => p.id === viewingPlanId.value) ?? null)
-
-function openNewPlan() {
-  editingPlan.value = null
-  planModalOpen.value = true
-}
-
-function openEditPlan(plan: PracticePlan) {
-  editingPlan.value = plan
-  planModalOpen.value = true
-}
-
-function onPlanSaved(saved: PracticePlan) {
-  planModalOpen.value = false
-  editingPlan.value = null
-  if (viewingPlanId.value) viewingPlanId.value = saved.id
-}
-
-async function onDeletePlan(plan: PracticePlan) {
-  const ok = await confirm({
-    title: 'Delete practice plan',
-    message: `Delete the plan for ${formatPlanDate(plan.planned_for)}? This also removes its clips.`,
-    confirmText: 'Delete',
-    tone: 'danger',
-  })
-  if (!ok) return
-  await deletePlan(plan.id)
-  if (viewingPlanId.value === plan.id) viewingPlanId.value = null
-}
-
-function exportPlan(plan: PracticePlan) {
-  router.push(`/practice-plans/${plan.id}/print`)
-}
 
 async function onDelete(p: Play) {
   const ok = await confirm({
@@ -213,21 +142,17 @@ function onDragEnd() {
   <section>
     <header class="mb-4 flex items-center justify-between">
       <div>
-        <h1 class="font-stencil text-2xl font-extrabold tracking-tight">
-          {{ activeTab === 'practice' ? 'Practice Plans' : 'Playbook' }}
-        </h1>
-        <p class="text-sm text-ink-500">
-          {{ activeTab === 'practice' ? 'Block out the session, attach the drills, print it.' : 'Diagram sets, attach film, run it back.' }}
-        </p>
+        <h1 v-if="activeTab === 'playbook'" class="font-stencil text-2xl font-extrabold tracking-tight">Playbook</h1>
+        <h1 v-else class="font-stencil text-2xl font-extrabold tracking-tight">Scouting Reports</h1>
       </div>
-      <button v-if="activeTab === 'practice'" class="btn-primary" @click="openNewPlan">+ New plan</button>
-      <button v-else class="btn-primary capitalize" @click="router.push('/plays/new')">+ New play</button>
+      <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" @click="router.push('/scout/new')">+ New Play</button>
+      <button v-else class="btn-primary capitalize" @click="router.push('/plays/new')">+ Scouting Report</button>
     </header>
 
-    <!-- Playbook / Scouting / Practice tabs -->
+    <!-- Playbook / Scouting -->
     <div class="mb-4 flex gap-0 overflow-hidden rounded-lg border border-ink-700">
       <button
-        v-for="tab in (['playbook', 'scouting', 'practice'] as const)"
+        v-for="tab in (['playbook', 'scouting'] as const)"
         :key="tab"
         :class="[
           'flex-1 py-2 text-sm font-medium transition',
@@ -243,15 +168,12 @@ function onDragEnd() {
       <input
         v-model="search"
         class="input"
-        :placeholder="activeTab === 'playbook' ? 'Search plays…' : activeTab === 'scouting' ? 'Search scouting reports…' : 'Search practice plans…'"
+        :placeholder="activeTab === 'playbook' ? 'Search plays…' : 'Search scouting reports…'"
       />
     </div>
 
     <!-- Quick filter by play type -->
-    <div
-      v-if="activeTab !== 'practice' && availableCategories.length"
-      class="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 pb-1"
-    >
+    <div v-if="availableCategories.length" class="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
       <button
         :class="[
           'shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition',
@@ -278,67 +200,7 @@ function onDragEnd() {
       </button>
     </div>
 
-    <!-- ===================== Practice plans ===================== -->
-    <template v-if="activeTab === 'practice'">
-      <p v-if="plansError" class="mb-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-        {{ plansError }}
-      </p>
-      <p v-if="plansLoading" class="text-sm text-ink-500">Loading…</p>
-
-      <div v-if="!plansLoading && !plans.length" class="card p-10 text-center">
-        <p class="mb-3 text-ink-500">No practice plans yet.</p>
-        <button class="btn-primary" @click="openNewPlan">Build your first plan</button>
-      </div>
-
-      <p v-else-if="!plansLoading && !filteredPlans.length" class="text-sm text-ink-500">
-        No plans match "{{ search }}".
-      </p>
-
-      <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-y-auto pb-nav" style="height: calc(100dvh - 240px)">
-        <article v-for="plan in filteredPlans" :key="plan.id" class="card flex h-fit flex-col p-4">
-          <div class="flex items-start justify-between gap-2">
-            <h3 class="font-semibold leading-tight">{{ formatPlanDate(plan.planned_for) }}</h3>
-            <span class="shrink-0 rounded bg-ink-700 px-1.5 py-0.5 text-[11px] text-ink-400">
-              {{ formatDuration(totalMinutes(plan.items)) }}
-            </span>
-          </div>
-          <p class="mt-0.5 text-xs uppercase tracking-wide text-rim">
-            {{ (plan.items?.length ?? 0) }} block{{ (plan.items?.length ?? 0) === 1 ? '' : 's' }}
-            <span v-if="plan.videos?.length"> · {{ plan.videos.length }} clip{{ plan.videos.length === 1 ? '' : 's' }}</span>
-          </p>
-
-          <ol class="mt-3 min-h-[3.5rem] space-y-1 text-sm text-ink-500">
-            <li v-for="(item, i) in (plan.items ?? []).slice(0, 4)" :key="item.id" class="flex gap-2 truncate">
-              <span class="shrink-0 text-ink-600">{{ item.duration_min }}′</span>
-              <span class="truncate">{{ blockTitle(item, i) }}</span>
-            </li>
-            <li v-if="(plan.items?.length ?? 0) > 4" class="text-xs text-ink-600">
-              +{{ (plan.items?.length ?? 0) - 4 }} more
-            </li>
-            <li v-if="!plan.items?.length" class="text-xs italic text-ink-600">No blocks yet</li>
-          </ol>
-
-          <div class="mt-3 flex gap-2">
-            <span class="ml-auto" />
-            <button class="btn-ghost py-1.5 text-xs" title="View plan" @click="viewingPlanId = plan.id">
-              <EyeIcon class="h-4 w-4" />
-            </button>
-            <button class="btn-ghost py-1.5 text-xs" title="Edit plan" @click="openEditPlan(plan)">
-              <PencilIcon class="h-4 w-4" />
-            </button>
-            <button class="btn-ghost py-1.5 text-xs" title="Export for printing" @click="exportPlan(plan)">
-              <PrinterIcon class="h-4 w-4" />
-            </button>
-            <button class="btn-danger py-1.5 text-xs" title="Delete plan" @click="onDeletePlan(plan)">
-              <TrashIcon class="h-4 w-4" />
-            </button>
-          </div>
-        </article>
-      </div>
-    </template>
-
     <!-- ===================== Plays / scouting ===================== -->
-    <template v-else>
     <p v-if="error" class="mb-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
       {{ error }}
     </p>
@@ -430,22 +292,6 @@ function onDragEnd() {
       :videos="previewPlay.videos"
       :default_preview_mode="previewPlay.default_preview_mode"
       @close="previewPlay = null"
-    />
-    </template>
-
-    <!-- Practice plan overlays (mounted regardless of tab so they survive a tab switch) -->
-    <PracticePlanViewer
-      v-if="viewingPlan"
-      :plan="viewingPlan"
-      @close="viewingPlanId = null"
-      @edit="openEditPlan(viewingPlan)"
-      @print="exportPlan(viewingPlan)"
-    />
-    <PracticePlanModal
-      v-if="planModalOpen"
-      :plan="editingPlan"
-      @close="planModalOpen = false; editingPlan = null"
-      @saved="onPlanSaved"
     />
   </section>
 </template>

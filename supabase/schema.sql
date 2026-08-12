@@ -259,3 +259,14 @@ drop policy if exists auth_video_del   on storage.objects;
 create policy auth_video_read  on storage.objects for select to authenticated using (bucket_id = 'play-videos');
 create policy auth_video_write on storage.objects for insert to authenticated with check (bucket_id = 'play-videos');
 create policy auth_video_del   on storage.objects for delete to authenticated using (bucket_id = 'play-videos');
+
+-- ============================================================
+-- Migration: practice plans carry a start and end time
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- Wall-clock times, no zone: a practice at 4pm is at 4pm in the gym. The blocks
+-- are laid out from start_time; end_time is the window the plan is judged
+-- against. Both nullable — plans saved before this migration have neither.
+alter table public.practice_plans add column if not exists start_time time;
+alter table public.practice_plans add column if not exists end_time   time;

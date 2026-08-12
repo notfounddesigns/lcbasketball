@@ -153,6 +153,8 @@ export interface PracticePlan {
   id: string
   name: string | null // optional; plans are titled by their date
   planned_for: string | null // ISO date
+  start_time: string | null // local wall clock, 'HH:MM[:SS]' — blocks hang off this
+  end_time: string | null // when the gym is given back
   notes: string | null
   created_at: string
   items?: PracticePlanItem[]
@@ -162,6 +164,8 @@ export interface PracticePlan {
 export interface PracticePlanDraft {
   name: string | null
   planned_for: string | null
+  start_time: string | null
+  end_time: string | null
   notes: string | null
 }
 

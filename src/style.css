@@ -59,6 +59,9 @@ input[type='number']::-webkit-inner-spin-button {
 .btn-ghost {
   @apply btn border border-ink-600 bg-ink-800 text-chalk hover:border-ink-500 hover:bg-ink-700;
 }
+.btn-ghost-outline {
+  @apply btn bg-ink-800 text-chalk hover:bg-ink-700;
+}
 .btn-danger {
   @apply btn border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20;
 }

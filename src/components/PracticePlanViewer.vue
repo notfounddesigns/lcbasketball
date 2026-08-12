@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PracticePlan } from '@/types'
-import { blockRanges, blockTitle, formatDuration, formatPlanDate, totalMinutes } from '@/lib/practice-utils'
+import { blockRanges, blockTitle, formatDuration, formatPlanDate, formatTimeWindow, totalMinutes } from '@/lib/practice-utils'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import { PencilIcon, PrinterIcon } from '@heroicons/vue/24/outline'
 
@@ -9,7 +9,8 @@ const props = defineProps<{ plan: PracticePlan }>()
 const emit = defineEmits<{ close: []; edit: []; print: [] }>()
 
 const items = computed(() => props.plan.items ?? [])
-const ranges = computed(() => blockRanges(items.value))
+const ranges = computed(() => blockRanges(items.value, props.plan.start_time))
+const timeWindow = computed(() => formatTimeWindow(props.plan.start_time, props.plan.end_time))
 const playableVideos = computed(() => (props.plan.videos ?? []).filter((v) => v.url))
 </script>
 
@@ -22,6 +23,7 @@ const playableVideos = computed(() => (props.plan.videos ?? []).filter((v) => v.
         <div class="grow truncate">
           <h2 class="truncate font-stencil text-lg font-bold">{{ formatPlanDate(plan.planned_for) }}</h2>
           <p class="text-xs text-ink-500">
+            <span v-if="timeWindow">{{ timeWindow }} · </span>
             {{ items.length }} block{{ items.length === 1 ? '' : 's' }} · {{ formatDuration(totalMinutes(items)) }}
           </p>
         </div>

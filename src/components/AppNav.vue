@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import { BookOpenIcon, ChartBarIcon, ClipboardIcon, ClipboardDocumentListIcon, UserCircleIcon } from '@heroicons/vue/24/outline'
-import { BookOpenIcon as BookOpenSolid, ChartBarIcon as ChartBarSolid, ClipboardIcon as ClipboardSolid, UserCircleIcon as UserCircleSolid } from '@heroicons/vue/24/solid'
+import { BookOpenIcon as BookOpenSolid, ChartBarIcon as ChartBarSolid, ClipboardIcon as ClipboardSolid, ClipboardDocumentListIcon as ClipboardDocumentListSolid, UserCircleIcon as UserCircleSolid } from '@heroicons/vue/24/solid'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 const route = useRoute()
 
 const tabs = [
-  { to: '/whiteboard', label: 'Whiteboard', outline: ClipboardIcon, solid: ClipboardSolid },
+  { to: '/whiteboard', label: 'Draw', outline: ClipboardIcon, solid: ClipboardSolid },
+  { to: '/practice', label: 'Practice', outline: ClipboardDocumentListIcon, solid: ClipboardDocumentListSolid },
   { to: '/plays', label: 'Plays', outline: BookOpenIcon, solid: BookOpenSolid },
   { to: '/stats', label: 'Stats', outline: ChartBarIcon, solid: ChartBarSolid },
-  { to: '/account', label: 'Account', outline: UserCircleIcon, solid: UserCircleSolid },
-  // { to: '/practice', label: 'Practice', outline: ClipboardDocumentListIcon, solid: ClipboardSolid },
+  { to: '/account', label: 'Account', outline: UserCircleIcon, solid: UserCircleSolid }
 ]
 </script>
 

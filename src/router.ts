@@ -3,6 +3,7 @@ import PlaysView from '@/views/PlaysView.vue'
 import StatsView from '@/views/StatsView.vue'
 import PlayEditorView from '@/views/PlayEditorView.vue'
 import PrintPlayView from '@/views/PrintPlayView.vue'
+import PracticePlanView from '@/views/PracticePlanView.vue'
 import PrintPracticePlanView from '@/views/PrintPracticePlanView.vue'
 import WhiteboardView from '@/views/WhiteboardView.vue'
 import AccountView from '@/views/AccountView.vue'
@@ -19,9 +20,8 @@ export const router = createRouter({
     { path: '/plays/:id/print', name: 'play-print', component: PrintPlayView },
     { path: '/plays/:id', name: 'play-edit', component: PlayEditorView },
     { path: '/stats', name: 'stats', component: StatsView },
-    // Practice plans live as a tab on /plays; only the print sheet needs a route.
+    { path: '/practice', name: 'practice', component: PracticePlanView },
     { path: '/practice-plans/:id/print', name: 'practice-plan-print', component: PrintPracticePlanView },
-    { path: '/practice', redirect: '/plays' },
     { path: '/whiteboard', name: 'whiteboard', component: WhiteboardView },
     { path: '/account', name: 'account', component: AccountView },
   ],

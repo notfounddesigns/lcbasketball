@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePracticePlan } from '@/composables/usePracticePlan'
-import { blockRanges, blockTitle, formatDuration, formatPlanDate, totalMinutes } from '@/lib/practice-utils'
+import { blockRanges, blockTitle, formatDuration, formatPlanDate, formatTimeWindow, totalMinutes } from '@/lib/practice-utils'
 import { diagramPhases } from '@/lib/diagram-utils'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 
@@ -11,7 +11,8 @@ const { plans, fetchPlans } = usePracticePlan()
 
 const plan = computed(() => plans.value.find((p) => p.id === route.params.id) ?? null)
 const items = computed(() => plan.value?.items ?? [])
-const ranges = computed(() => blockRanges(items.value))
+const ranges = computed(() => blockRanges(items.value, plan.value?.start_time))
+const timeWindow = computed(() => formatTimeWindow(plan.value?.start_time ?? null, plan.value?.end_time ?? null))
 
 // One row per time block, with the attached drill flattened into its phases so
 // the sheet prints every phase of the play, not just the first. Built once here
@@ -49,6 +50,7 @@ onMounted(async () => {
           <div class="flex items-baseline justify-between">
             <p class="mt-1 text-sm font-semibold uppercase tracking-wide text-gray-600">
               {{ formatPlanDate(plan.planned_for, { weekday: 'long', month: 'long' }) }}
+              <span v-if="timeWindow" class="block normal-case">{{ timeWindow }}</span>
             </p>
             <img src="/LCLogo.png" alt="LC Basketball" class="w-1/6" />
             <span class="text-sm font-semibold text-gray-600">
