@@ -33,6 +33,7 @@ const { isAuthenticated } = useAuth()
 // actually protected by the `authenticated` RLS policies in supabase/schema.sql,
 // so a forged client-side session still reads nothing.
 router.beforeEach(async (to) => {
+  if (import.meta.env.DEV) { return true }
   // Awaited on every navigation, but initAuth caches its promise, so only the
   // first one pays for restoring the persisted session.
   await initAuth()

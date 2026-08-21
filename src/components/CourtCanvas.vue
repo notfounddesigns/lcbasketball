@@ -98,7 +98,7 @@ function measureAvailableHeight() {
       : (document.querySelector('nav.fixed')?.getBoundingClientRect().height ?? 0)
     // Subtract bottom toolbar height (tool strip ~60px)
     const bottomH = 60
-    availableHeight.value = Math.max(0, window.innerHeight - top - reserved - 8 - bottomH)
+    availableHeight.value = Math.max(0, window.innerHeight - top - reserved - bottomH)
   }
 }
 
@@ -478,7 +478,10 @@ function onPointerLeave() {
   onPointerUp()
 }
 
-function clearAll() { commit([]) }
+function clearAll() {
+  commit([])
+  markerLabel.value = '1'
+}
 function undo() { 
   commit(elements.value.slice(0, -1))
   // decrement marker label if last element was a marker
@@ -980,17 +983,18 @@ defineExpose({ exportPng })
     </div>
 
     <!-- ── BOTTOM TOOLBAR (editable only) ── -->
-    <div v-if="editable && !props.tool" class="flex flex-col gap-2">
+    <div class="flex flex-col gap-1">
       <!-- Tool selector strip -->
-      <div class="flex gap-1 rounded-2xl bg-ink-800 p-1.5">
+      <div class="flex rounded-2xl bg-ink-800 p-0.5 divide-x-2 divide-ink-500">
         <button
-          v-for="t in (['select', 'pen', 'arrow', 'marker', 'erase'] as Tool[])"
+          v-for="(t, index) in (['undo', 'select', 'pen', 'arrow', 'marker', 'erase'] as Tool[])"
           :key="t"
-          class="flex flex-1 items-center justify-center rounded-xl py-2.5 transition"
-          :class="tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk'"
+          class="flex flex-1 items-center justify-center py-1.5 transition"
+          :class="[tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk']"
           :title="t"
-          @click="tool = t"
+          @click="tool = t, tool === 'undo' ? [undo(), tool = 'pen'] : tool === 'erase' ? [clearAll(), tool = 'pen'] : null"
         >
+          <ArrowUturnLeftIcon v-if="t === 'undo'" class="h-5 w-5" />
           <HandRaisedIcon v-if="t === 'select'" class="h-5 w-5" />
           <PencilIcon v-else-if="t === 'pen'" class="h-5 w-5" />
           <ArrowUpRightIcon v-else-if="t === 'arrow'" class="h-5 w-5" />
@@ -1001,10 +1005,10 @@ defineExpose({ exportPng })
     </div>
 
     <!-- ── WHITEBOARD TOOLBAR (whiteboard view only) ── -->
-    <div v-if="editable && props.tool" class="flex flex-col gap-2">
+    <!-- <div v-if="editable && props.tool" class="flex flex-col gap-2">
       <div class="flex gap-1 rounded-2xl bg-ink-800 p-1.5">
         <button
-          v-for="t in (['undo', 'pen', 'erase'] as Tool[])"
+          v-for="t in (['undo', 'pen', 'marker', 'erase'] as Tool[])"
           :key="t"
           class="flex flex-1 items-center justify-center rounded-xl py-2.5 transition"
           :class="[tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk', t === 'undo' && elements.length === 0 ? 'opacity-50 cursor-not-allowed' : '']"
@@ -1017,7 +1021,7 @@ defineExpose({ exportPng })
           <TrashIcon v-else class="h-5 w-5" />
         </button>
       </div>
-    </div>
+    </div> -->
 
   </div>
 </template>

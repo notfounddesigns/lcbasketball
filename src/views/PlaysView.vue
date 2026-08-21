@@ -145,8 +145,8 @@ function onDragEnd() {
         <h1 v-if="activeTab === 'playbook'" class="font-stencil text-2xl font-extrabold tracking-tight">Playbook</h1>
         <h1 v-else class="font-stencil text-2xl font-extrabold tracking-tight">Scouting Reports</h1>
       </div>
-      <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" @click="router.push('/scout/new')">+ New Play</button>
-      <button v-else class="btn-primary capitalize" @click="router.push('/plays/new')">+ Scouting Report</button>
+      <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" @click="router.push('/plays/new')">+ New Play</button>
+      <button v-else class="btn-primary capitalize" @click="router.push('/scout/new')">+ Scouting Report</button>
     </header>
 
     <!-- Playbook / Scouting -->
