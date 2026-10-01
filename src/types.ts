@@ -156,6 +156,8 @@ export interface PracticePlan {
   start_time: string | null // local wall clock, 'HH:MM[:SS]' — blocks hang off this
   end_time: string | null // when the gym is given back
   notes: string | null
+  quote: string | null // printed atop the plan's first two pages
+  quote_author: string | null
   created_at: string
   items?: PracticePlanItem[]
   videos?: PracticePlanVideo[]
@@ -167,6 +169,8 @@ export interface PracticePlanDraft {
   start_time: string | null
   end_time: string | null
   notes: string | null
+  quote: string | null
+  quote_author: string | null
 }
 
 // Editable shape of a time block while the plan form is open — the rows are

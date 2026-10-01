@@ -127,23 +127,23 @@ function exportPlan(plan: PracticePlan) {
             {{ formatDuration(totalMinutes(plan.items)) }}
           </span>
         </div>
-        <p class="mt-0.5 text-xs uppercase tracking-wide text-rim">
+        <p class="mt-0.5 text-xs uppercase tracking-wide text-red-500">
           <span v-if="window">{{ window }} · </span>
           {{ (plan.items?.length ?? 0) }} block{{ (plan.items?.length ?? 0) === 1 ? '' : 's' }}
           <span v-if="plan.videos?.length"> · {{ plan.videos.length }} clip{{ plan.videos.length === 1 ? '' : 's' }}</span>
         </p>
 
         <ol class="mt-3 min-h-[3.5rem] space-y-1 text-sm text-ink-500">
-          <li v-for="(item, i) in (plan.items ?? []).slice(0, 4)" :key="item.id" class="flex gap-2 truncate">
-            <span class="shrink-0 font-mono text-xs text-ink-600">
-              {{ plan.start_time ? ranges[i].start : `${item.duration_min}′` }}
+          <li v-for="(item, i) in (plan.items ?? []).slice(0, 4)" :key="item.id" class="flex items-center gap-2 truncate">
+            <span class="shrink-0 font-mono text-xs text-ink-500">
+              {{ plan.start_time ? ranges[i].start : `${item.duration_min}′` }} -
             </span>
             <span class="truncate">{{ blockTitle(item, i) }}</span>
           </li>
-          <li v-if="(plan.items?.length ?? 0) > 4" class="text-xs text-ink-600">
+          <li v-if="(plan.items?.length ?? 0) > 4" class="text-xs text-ink-500">
             +{{ (plan.items?.length ?? 0) - 4 }} more
           </li>
-          <li v-if="!plan.items?.length" class="text-xs italic text-ink-600">No blocks yet</li>
+          <li v-if="!plan.items?.length" class="text-xs italic text-ink-500">No blocks yet</li>
         </ol>
 
         <div class="mt-3 flex gap-2">

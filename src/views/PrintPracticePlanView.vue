@@ -45,14 +45,63 @@ onMounted(async () => {
   <!-- Teleport to <body> so the print CSS selector works — see PrintPlayView. -->
   <Teleport v-else to="body">
     <div class="print-sheet bg-white text-black">
+      <!-- Page 1: Quick View — the whole session at a glance, no diagrams -->
       <div class="print-page">
-        <header class="mb-5 border-b-2 border-black pb-3">
+        <blockquote v-if="plan.quote" class="mb-4 text-center">
+          <p class="text-base font-semibold italic leading-snug">&ldquo;{{ plan.quote }}&rdquo;</p>
+          <footer v-if="plan.quote_author" class="mt-1 text-xs uppercase tracking-wide text-gray-500">&mdash; {{ plan.quote_author }}</footer>
+        </blockquote>
+        <header class="flex flex-col mb-5 border-b-2 border-black pb-3">
+          <img src="/LCLogo.png" alt="LC Basketball" class="mx-auto mb-3 w-1/6" />
+          <div class="flex items-baseline justify-between gap-4 text-sm font-semibold text-gray-600">
+            <p class="uppercase tracking-wide">
+              {{ formatPlanDate(plan.planned_for, { weekday: 'long', month: 'long' }) }}
+              <span v-if="timeWindow" class="block normal-case">{{ timeWindow }}</span>
+            </p>
+            <span class="shrink-0">
+              {{ items.length }} block{{ items.length === 1 ? '' : 's' }} · {{ formatDuration(totalMinutes(items)) }}
+            </span>
+          </div>
+        </header>
+
+        <div v-if="plan.notes" class="mb-5 rounded border border-gray-300 p-4">
+          <p class="mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">Session notes</p>
+          <p class="whitespace-pre-wrap text-sm leading-relaxed">{{ plan.notes }}</p>
+        </div>
+
+        <table v-if="items.length" class="w-full border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-gray-400 text-left text-xs uppercase tracking-wide text-gray-500">
+              <th class="w-28 py-2 pr-2 font-bold">Time</th>
+              <th class="w-20 py-2 pr-2 font-bold">Duration</th>
+              <th class="py-2 font-bold">Block</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in rows" :key="row.item.id + '-quick'" class="break-inside-avoid border-b border-gray-200">
+              <td class="py-2 pr-2 font-mono text-xs text-gray-600">{{ row.range.start }}–{{ row.range.end }}</td>
+              <td class="py-2 pr-2 font-bold">{{ formatDuration(row.item.duration_min) }}</td>
+              <td class="py-2 font-semibold">{{ row.title }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p v-else class="py-6 text-center text-sm text-gray-500">No time blocks in this plan.</p>
+      </div>
+
+      <!-- Detail pages: every block with its notes and drill diagrams -->
+      <div class="print-page">
+        <!-- <blockquote v-if="plan.quote" class="mb-4 text-center">
+          <p class="text-base font-semibold italic leading-snug">&ldquo;{{ plan.quote }}&rdquo;</p>
+          <footer v-if="plan.quote_author" class="mt-1 text-xs uppercase tracking-wide text-gray-500">&mdash; {{ plan.quote_author }}</footer>
+        </blockquote> -->
+        <header class="flex flex-col mb-5 border-b-2 border-black pb-3">
+          <img src="/LCLogo.png" alt="LC Basketball" class="mx-auto mb-3 w-1/6" />
           <div class="flex items-baseline justify-between">
             <p class="mt-1 text-sm font-semibold uppercase tracking-wide text-gray-600">
               {{ formatPlanDate(plan.planned_for, { weekday: 'long', month: 'long' }) }}
               <span v-if="timeWindow" class="block normal-case">{{ timeWindow }}</span>
             </p>
-            <img src="/LCLogo.png" alt="LC Basketball" class="w-1/6" />
             <span class="text-sm font-semibold text-gray-600">
               {{ items.length }} block{{ items.length === 1 ? '' : 's' }} · {{ formatDuration(totalMinutes(items)) }}
             </span>
@@ -80,7 +129,7 @@ onMounted(async () => {
                 <p class="font-semibold">{{ row.title }}</p>
                 <p v-if="row.item.play" class="text-xs uppercase tracking-wide text-gray-500">Drill: {{ row.item.play.name }}</p>
                 <p v-if="row.item.notes" class="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{{ row.item.notes }}</p>
-                <div v-if="row.item.play" class="mt-4 rounded border border-gray-300 p-4">
+                <div v-if="row.item.play" class="mt-4 rounded p-1">
                   <header class="mb-4 flex items-baseline justify-between gap-3 border-b-2 border-black pb-3">
                     <h2 class="text-2xl font-extrabold tracking-tight">{{ row.item.play.name }}</h2>
                     <span v-if="row.phases.length > 1" class="shrink-0 text-sm font-semibold text-gray-600">

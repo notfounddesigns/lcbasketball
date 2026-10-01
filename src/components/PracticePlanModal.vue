@@ -13,7 +13,8 @@ import {
   windowMinutes,
 } from '@/lib/practice-utils'
 import CourtCanvas from '@/components/CourtCanvas.vue'
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { randomQuote } from '@/lib/quotes'
+import { ArrowDownIcon, ArrowPathIcon, ArrowUpIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 // `plan` present = edit an existing plan; absent = create a new one.
 const props = defineProps<{ plan?: PracticePlan | null }>()
@@ -33,6 +34,19 @@ const date = ref(props.plan?.planned_for ?? today)
 const startTime = ref(toTimeInput(props.plan?.start_time))
 const endTime = ref(toTimeInput(props.plan?.end_time))
 const notes = ref(props.plan?.notes ?? '')
+
+// New plans start with a random sports quote; an existing plan keeps whatever it
+// was saved with (including none). Either way it's plain text the coach can edit.
+const initialQuote = props.plan ? null : randomQuote()
+const quote = ref(props.plan ? props.plan.quote ?? '' : initialQuote!.text)
+const quoteAuthor = ref(props.plan ? props.plan.quote_author ?? '' : initialQuote!.author)
+
+function regenerateQuote() {
+  const q = randomQuote(quote.value)
+  quote.value = q.text
+  quoteAuthor.value = q.author
+}
+
 const blocks = ref<TimeBlockDraft[]>(
   props.plan?.items?.length
     ? props.plan.items.map((i) => ({
@@ -175,6 +189,9 @@ async function onSubmit() {
     start_time: startTime.value || null,
     end_time: endTime.value || null,
     notes: notes.value.trim() || null,
+    quote: quote.value.trim() || null,
+    // An author with no quote has nothing to attribute.
+    quote_author: (quote.value.trim() && quoteAuthor.value.trim()) || null,
   }
 
   const saved = props.plan
@@ -326,6 +343,24 @@ async function onSubmit() {
           <div>
             <label class="label" for="plan-notes">Notes (optional)</label>
             <textarea id="plan-notes" v-model="notes" rows="3" class="input resize-none" placeholder="Goals for the session…" />
+          </div>
+
+          <!-- motivational quote (printed atop pages 1 and 2) -->
+          <div>
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <label class="label mb-0" for="plan-quote">Quote (optional)</label>
+              <button class="btn-ghost px-2 py-0.5 text-[11px]" title="Pick a different quote" @click="regenerateQuote">
+                <ArrowPathIcon class="h-3.5 w-3.5" /> New quote
+              </button>
+            </div>
+            <textarea id="plan-quote" v-model="quote" rows="2" class="input resize-none" placeholder="Type your own, or pick one with New quote" />
+            <input
+              v-model="quoteAuthor"
+              class="input mt-2"
+              aria-label="Quote author"
+              placeholder="Author"
+            />
+            <p class="mt-1 text-xs text-ink-500">Printed at the top of the first two pages.</p>
           </div>
 
           <!-- video -->

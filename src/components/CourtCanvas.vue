@@ -215,17 +215,36 @@ function distToElement(p: Point, el: DiagramElement): number {
 }
 
 // ---------- select tool ----------
-const HIT_HANDLE = 0.055  // normalized hit radius for endpoint handles
+const HIT_HANDLE = 0.035  // normalized hit radius for endpoint handles
 const HIT_BODY   = 0.030  // normalized hit radius for element body
+// Normalized hit radius for player markers — about the dashed selection ring
+// (r=23 SVG units on a 500-wide half court). Kept tight so arrow endpoints
+// sitting just off a player can still be grabbed.
+const HIT_MARKER = 0.035
 
 function onSelectDown(e: PointerEvent) {
   const p = toNorm(e)
   ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  const reversed = [...elements.value].reverse()
+
+  // ── priority 0: double-tap a player to give them the ball ──
+  // Checked before anything else: the first tap selects the marker, so the
+  // second would otherwise be taken as a drag start by the selected-handle check.
+  const tappedMarker = reversed.find(
+    (el): el is MarkerElement => el.type === 'marker' && dist(p, el.at) < HIT_MARKER,
+  )
+  if (tappedMarker && isMarkerDoubleTap(tappedMarker, p)) {
+    // No drag state on the second tap: pointerup would otherwise commit the
+    // stale drag copy over the ball change.
+    selectedId.value = tappedMarker.id
+    giveBallTo(tappedMarker)
+    return
+  }
 
   // ── priority 1: handles of already-selected element ──
   if (selectedId.value) {
     const sel = elements.value.find((el) => el.id === selectedId.value)
-    if (sel?.type === 'marker' && dist(p, sel.at) < HIT_HANDLE * 1.5) {
+    if (sel?.type === 'marker' && dist(p, sel.at) < HIT_MARKER) {
       dragKind.value = 'marker'
       dragLive.value = { ...sel }
       return
@@ -250,11 +269,9 @@ function onSelectDown(e: PointerEvent) {
   }
 
   // ── priority 2: hit-test all elements ──
-  const reversed = [...elements.value].reverse()
-
   // Markers first (rendered on top)
   for (const el of reversed) {
-    if (el.type === 'marker' && dist(p, el.at) < HIT_HANDLE * 1.5) {
+    if (el.type === 'marker' && dist(p, el.at) < HIT_MARKER) {
       selectedId.value = el.id
       dragKind.value = 'marker'
       dragLive.value = { ...el }
@@ -286,6 +303,34 @@ function onSelectDown(e: PointerEvent) {
 
   // Miss → deselect
   selectedId.value = null
+}
+
+// ---------- double-tap a player to give them the ball ----------
+// Detected from pointerdown rather than `dblclick` so it behaves the same for
+// mouse, pen and touch (iPad doesn't reliably fire dblclick, and the court
+// swallows the double-tap gesture anyway — see onCourtTouchEnd).
+const BALL_TAP_SLOP = 0.03 // normalized — how far apart the two taps may land
+let lastMarkerTap: { id: string; at: Point; time: number } | null = null
+
+function isMarkerDoubleTap(el: MarkerElement, p: Point): boolean {
+  const now = performance.now()
+  const prev = lastMarkerTap
+  const isDouble = !!prev && prev.id === el.id && now - prev.time < DOUBLE_TAP_MS && dist(prev.at, p) < BALL_TAP_SLOP
+  // A completed double-tap resets, so a third tap starts a fresh pair.
+  lastMarkerTap = isDouble ? null : { id: el.id, at: p, time: now }
+  return isDouble
+}
+
+// Exactly one offensive player holds the ball: circle the tapped one and
+// un-circle whoever had it. Defenders can't hold the ball, so they're ignored.
+function giveBallTo(target: MarkerElement) {
+  if (target.team === 'away' || target.team === 'ball') return
+  commit(elements.value.map((el) => {
+    if (el.type !== 'marker') return el
+    if (el.id === target.id) return { ...el, team: 'ball' }
+    if (el.team === 'ball') return { ...el, team: 'home' }
+    return el
+  }))
 }
 
 function onSelectMove(e: PointerEvent) {
@@ -749,7 +794,7 @@ defineExpose({ exportPng })
       </select>
       <!-- Context-sensitive options (arrow style, marker team/label, color) -->
       <div v-if="tool === 'arrow' || tool === 'marker'" class="h-[38px] flex items-center gap-2">
-        <select v-if="tool === 'arrow'" v-model="arrowStyle" class="input !w-28 flex-1 py-1 text-xs">
+        <select v-if="tool === 'arrow'" v-model="arrowStyle" class="input w-fit flex-1 py-1 text-xs">
           <option value="pass">Pass (dashed)</option>
           <option value="cut">Cut (solid)</option>
           <option value="dribble">Dribble (wavy)</option>
@@ -983,7 +1028,7 @@ defineExpose({ exportPng })
     </div>
 
     <!-- ── BOTTOM TOOLBAR (editable only) ── -->
-    <div class="flex flex-col gap-1">
+    <div v-if="editable" class="flex flex-col gap-1">
       <!-- Tool selector strip -->
       <div class="flex rounded-2xl bg-ink-800 p-0.5 divide-x-2 divide-ink-500">
         <button

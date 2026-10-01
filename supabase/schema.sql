@@ -270,3 +270,14 @@ create policy auth_video_del   on storage.objects for delete to authenticated us
 -- against. Both nullable — plans saved before this migration have neither.
 alter table public.practice_plans add column if not exists start_time time;
 alter table public.practice_plans add column if not exists end_time   time;
+
+-- ============================================================
+-- Migration: practice plans carry a motivational quote
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- Printed at the top of the plan's first two pages. Pre-filled from a built-in
+-- list when a plan is created, but free text — the coach can type their own.
+-- Both nullable — plans saved before this migration have neither.
+alter table public.practice_plans add column if not exists quote        text;
+alter table public.practice_plans add column if not exists quote_author text;

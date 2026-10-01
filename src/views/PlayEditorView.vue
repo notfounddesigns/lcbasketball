@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Diagram, DiagramElement, MarkerElement, PlayDraft } from '@/types'
 import { usePlays } from '@/composables/usePlays'
 import { useStats } from '@/composables/useStats'
-import { PLAY_CATEGORIES } from '@/lib/play-categories'
+import { PLAY_CATEGORIES, resolveCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import PlayAnimator from '@/components/PlayAnimator.vue'
 import VideoUploader from '@/components/VideoUploader.vue'
@@ -33,10 +33,18 @@ function blankDiagram(): Diagram {
 const form = reactive<PlayDraft>({
   name: '',
   description: '',
-  category: '',
+  // "+ New Play" from inside a playbook category passes it along.
+  category: resolveCategory(route.query.category as string | undefined) ?? '',
   court_type: 'half',
   diagram: blankDiagram(),
   is_scouting: false,
+})
+
+// A play saved under a category that's since been retired keeps that value as an
+// extra option, so opening and re-saving it doesn't silently blank the field.
+const legacyCategory = computed(() => {
+  const c = form.category?.trim()
+  return c && !PLAY_CATEGORIES.includes(c as never) ? c : null
 })
 
 const saving = ref(false)
@@ -228,6 +236,7 @@ async function save() {
           <select id="pe-cat" v-model="form.category" class="input">
             <option value="">— No category —</option>
             <option v-for="cat in PLAY_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+            <option v-if="legacyCategory" :value="legacyCategory">{{ legacyCategory }} (old)</option>
           </select>
         </div>
         <div>
@@ -358,6 +367,7 @@ async function save() {
             <select id="ms-cat" v-model="form.category" class="input">
               <option value="">— No category —</option>
               <option v-for="cat in PLAY_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+              <option v-if="legacyCategory" :value="legacyCategory">{{ legacyCategory }} (old)</option>
             </select>
           </div>
           <div>
