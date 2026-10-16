@@ -1,7 +1,6 @@
 import { computed, ref } from 'vue'
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js'
 import { AUTH_STORAGE_KEY, supabase, isSupabaseConfigured } from '@/lib/supabase'
-import { checkSupabaseHealth, healthMessage } from '@/composables/useSupabaseHealth'
 
 // Module-level singletons — the session is process-wide state, so the router
 // guard, the nav and every view read the same refs.
@@ -45,10 +44,6 @@ export function useAuth() {
       password,
     })
     if (error && isAuthRetryableFetchError(error)) {
-      // The request never got an answer, so error.message is the browser's
-      // bare "Load failed" / "Failed to fetch". Probe to say why instead.
-      const status = await checkSupabaseHealth()
-      return { error: healthMessage(status) ?? error.message }
     }
     return { error: error?.message ?? null }
   }
