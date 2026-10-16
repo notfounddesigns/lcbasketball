@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { supabase, VIDEO_BUCKET, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase, VIDEO_BUCKET, isSupabaseConfigured, withSignedUrls } from '@/lib/supabase'
 import type { Play, PlayDraft, PlayVideo } from '@/types'
 
 // Module-level singletons — state is shared across all component instances.
@@ -8,10 +8,14 @@ const plays = ref<Play[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-function resolveVideoUrl(storage_path: string): string | null {
-  if (!isSupabaseConfigured) return null
-  const { data } = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(storage_path)
-  return data.publicUrl ?? null
+// Sign every clip across the given plays in one batch request.
+async function signPlayVideos(rows: any[]): Promise<Play[]> {
+  const signed = await withSignedUrls(rows.flatMap((p) => (p.videos ?? []) as PlayVideo[]))
+  const byId = new Map(signed.map((v) => [v.id, v]))
+  return rows.map((p) => ({
+    ...p,
+    videos: ((p.videos ?? []) as PlayVideo[]).map((v) => byId.get(v.id) ?? v),
+  })) as Play[]
 }
 
 export function usePlays() {
@@ -30,13 +34,7 @@ export function usePlays() {
     if (err) {
       error.value = err.message
     } else {
-      plays.value = (data ?? []).map((p: any) => ({
-        ...p,
-        videos: (p.videos ?? []).map((v: PlayVideo) => ({
-          ...v,
-          url: resolveVideoUrl(v.storage_path),
-        })),
-      })) as Play[]
+      plays.value = await signPlayVideos(data ?? [])
     }
     loading.value = false
   }
@@ -67,13 +65,7 @@ export function usePlays() {
       error.value = err.message
       return null
     }
-    const updated = {
-      ...(data as Play),
-      videos: ((data as any).videos ?? []).map((v: PlayVideo) => ({
-        ...v,
-        url: resolveVideoUrl(v.storage_path),
-      })),
-    }
+    const [updated] = await signPlayVideos([data])
     plays.value = plays.value.map((p) => (p.id === id ? updated : p))
     return updated
   }
@@ -126,7 +118,7 @@ export function usePlays() {
       error.value = insErr.message
       return null
     }
-    const video: PlayVideo = { ...(data as PlayVideo), url: resolveVideoUrl(path) }
+    const [video] = await withSignedUrls([data as PlayVideo])
 
     const play = plays.value.find((p) => p.id === playId)
     if (play) play.videos = [...(play.videos ?? []), video]

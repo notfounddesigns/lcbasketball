@@ -67,14 +67,14 @@
 11. - [x] Play editor: saving a play with multiple phases only saves the last phase
 12. - [x] Placing a shot on the court away from the center of the court does not render in the correct place
 13. - [x] Print Practice Plan - right now it is only displaying the 1st phase of the drill. Needs to handle showing all phases in a grid
-14. - [ ] **[high]** Removing a player deletes all of their stats, shots and subs — `stat_events`, `shot_events` and `sub_events` use `on delete cascade` on `player_id` (`schema.sql:52,118,152-153`) while the confirm dialog says "Their recorded stats will remain" (`StatsView.vue:95`). Retire players via the unused `players.active` flag instead of deleting
-15. - [ ] **[high]** Season stats silently truncate — `fetchAllEvents` (`useStats.ts`) loads every stat event in one unpaged query; Supabase caps responses at 1,000 rows by default, so after a handful of games the newest games drop out of Season stats and the season CSV
-16. - [ ] **[high]** Double-tapping Made/Miss records the shot twice — `confirmShot` (`ShotChart.vue`) only clears `pendingShot` after both inserts finish and has no in-flight guard
-17. - [ ] **[high]** The bottom tool strip's eraser button wipes the whole phase — its click handler calls `clearAll()` (`CourtCanvas.vue:1191`) with no confirm or undo, so the real pixel eraser (`eraseAt`) is unreachable. Make it select the eraser tool and put "Clear all" behind a confirm
-18. - [ ] **[high]** PNG export includes selection rings/handles and drops the LC logo and Inter font — `exportPng` serializes the live SVG, and an SVG loaded as `<img>` can't fetch external resources. Deselect before export and inline the logo as a data URL
-19. - [ ] **[high]** Print play sheet renders phases 2+ as empty boxes — `PrintPlayView.vue:58` doesn't pass `auto-height`, so courts below the fold measure to 0 height
-20. - [ ] **[high]** Practice plan save can silently lose all blocks — `updatePlan` deletes items then re-inserts, and `createPlan`/`updatePlan` ignore the insert result (`usePracticePlan.ts`) before closing the modal. Do it in one transaction (RPC) or keep the modal open on failure
-21. - [ ] Shot can be credited to the wrong player — `confirmShot` re-reads `props.playerId`/`props.period` after `await recordShot`; capture them before awaiting
+14. - [x] **[high]** Removing a player deletes all of their stats, shots and subs — `stat_events`, `shot_events` and `sub_events` use `on delete cascade` on `player_id` (`schema.sql:52,118,152-153`) while the confirm dialog says "Their recorded stats will remain" (`StatsView.vue:95`). Retire players via the unused `players.active` flag instead of deleting
+15. - [x] **[high]** Season stats silently truncate — `fetchAllEvents` (`useStats.ts`) loads every stat event in one unpaged query; Supabase caps responses at 1,000 rows by default, so after a handful of games the newest games drop out of Season stats and the season CSV
+16. - [x] **[high]** Double-tapping Made/Miss records the shot twice — `confirmShot` (`ShotChart.vue`) only clears `pendingShot` after both inserts finish and has no in-flight guard
+17. - [x] **[high]** The bottom tool strip's eraser button wipes the whole phase — its click handler calls `clearAll()` (`CourtCanvas.vue:1191`) with no confirm or undo, so the real pixel eraser (`eraseAt`) is unreachable. Make it select the eraser tool and put "Clear all" behind a confirm
+18. - [x] **[high]** PNG export includes selection rings/handles and drops the LC logo and Inter font — `exportPng` serializes the live SVG, and an SVG loaded as `<img>` can't fetch external resources. Deselect before export and inline the logo as a data URL
+19. - [x] **[high]** Print play sheet renders phases 2+ as empty boxes — `PrintPlayView.vue:58` doesn't pass `auto-height`, so courts below the fold measure to 0 height
+20. - [x] **[high]** Practice plan save can silently lose all blocks — `updatePlan` deletes items then re-inserts, and `createPlan`/`updatePlan` ignore the insert result (`usePracticePlan.ts`) before closing the modal. Do it in one transaction (RPC) or keep the modal open on failure
+21. - [x] Shot can be credited to the wrong player — `confirmShot` re-reads `props.playerId`/`props.period` after `await recordShot`; capture them before awaiting
 22. - [ ] Shot markers and box-score stats can drift apart — `recordShot`'s result is ignored, and shots/stats are paired only by time, so Undo can delete an unrelated shot. Add a `stat_event_id` column on `shot_events`
 23. - [ ] Jump shots from the free-throw line are logged as free throws (1 pt) — `getShotType` treats any tap near the FT line as an FT. Add an explicit FT button instead of inferring from position
 24. - [ ] Season tab is stale until reload — `recordStat`, `undoLastFor` and `deleteGame` update `events` but not `allEvents`
@@ -136,7 +136,7 @@
 14. - [ ] Copy/duplicate a phase and reorder phase tabs
 15. - [ ] Defensive formation presets (2-3, 1-3-1, man) alongside the offensive templates
 16. - [ ] Show play notes on every page of the print sheet
-17. - [ ] Give the eraser its own icon (it currently shares the trash icon with "Clear all")
+17. - [x] Give the eraser its own icon (it currently shares the trash icon with "Clear all")
 18. - [ ] Proper dialog behaviour for modals — Escape to close, focus trap/return, `role="dialog"`/`aria-labelledby` (PracticePlanModal, PracticePlanViewer, ConfirmDialog)
 19. - [ ] Re-enable pinch zoom outside the court canvas (`user-scalable=no` fails WCAG 1.4.4)
 20. - [ ] "New version available" prompt for the PWA — `autoUpdate` leaves open tabs on old code
@@ -146,9 +146,9 @@
 
 # Security
 
-1. - [ ] **[high]** Anyone who signs up can read and change all team data — the login page offers "Sign up" and every RLS policy is `to authenticated using (true)`. Hide sign-up and restrict policies to an allow-list (e.g. a `staff` table or email/role claim)
-2. - [ ] Video buckets are public, so clip URLs play without signing in — switch to private buckets with signed URLs
-3. - [ ] Any signed-in user can delete any stored clip (storage delete policy has no ownership check)
+1. - [x] **[high]** Anyone who signs up can read and change all team data — the login page offers "Sign up" and every RLS policy is `to authenticated using (true)`. Hide sign-up and restrict policies to an allow-list (e.g. a `staff` table or email/role claim)
+2. - [x] Video buckets are public, so clip URLs play without signing in — switch to private buckets with signed URLs
+3. - [x] Any signed-in user can delete any stored clip (storage delete policy has no ownership check)
 
 ---
 

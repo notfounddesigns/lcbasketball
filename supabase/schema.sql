@@ -291,3 +291,105 @@ alter table public.practice_plans add column if not exists quote_author text;
 -- (or saved before this migration) has no final score yet.
 alter table public.games add column if not exists our_score int check (our_score >= 0);
 alter table public.games add column if not exists opp_score int check (opp_score >= 0);
+
+-- ============================================================
+-- Migration: restrict access to an allow-list of coaching staff
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- Until now every policy was `to authenticated using (true)`, so anyone who
+-- could create an account could read and change the whole program. Access now
+-- requires the signed-in email to be on this list.
+create table if not exists public.staff (
+  email      text primary key,
+  created_at timestamptz not null default now()
+);
+alter table public.staff enable row level security;
+-- No policies on staff itself: it's managed from the SQL editor / dashboard,
+-- and is_staff() below reads it as the table owner.
+
+-- Seed with the accounts that exist today so nobody is locked out by running
+-- this. REVIEW THE RESULT and delete anyone who isn't coaching staff:
+--   select * from public.staff;
+--   delete from public.staff where email = 'someone@example.com';
+-- To add a coach later: create their account (Authentication → Users → Add
+-- user → Create new user, with a password) and allow-list the email:
+--   insert into public.staff (email) values ('coach@example.com');
+insert into public.staff (email)
+select lower(email) from auth.users where email is not null
+on conflict do nothing;
+
+create or replace function public.is_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.staff
+    where email = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+$$;
+grant execute on function public.is_staff() to authenticated;
+
+drop policy if exists auth_all_plays        on public.plays;
+drop policy if exists auth_all_play_videos  on public.play_videos;
+drop policy if exists auth_all_players      on public.players;
+drop policy if exists auth_all_games        on public.games;
+drop policy if exists auth_all_stat_events  on public.stat_events;
+drop policy if exists auth_all_shot_events  on public.shot_events;
+drop policy if exists auth_all_plans        on public.practice_plans;
+drop policy if exists auth_all_plan_items   on public.practice_plan_items;
+drop policy if exists auth_all_plan_videos  on public.practice_plan_videos;
+drop policy if exists auth_all_sub_events   on public.sub_events;
+
+create policy auth_all_plays        on public.plays                for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_play_videos  on public.play_videos          for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_players      on public.players              for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_games        on public.games                for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_stat_events  on public.stat_events          for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_shot_events  on public.shot_events          for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_plans        on public.practice_plans       for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_plan_items   on public.practice_plan_items  for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_plan_videos  on public.practice_plan_videos for all to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy auth_all_sub_events   on public.sub_events           for all to authenticated using (public.is_staff()) with check (public.is_staff());
+
+-- Clips: private bucket (the app now plays them through signed URLs) and
+-- staff-only read/write/delete.
+update storage.buckets set public = false where id = 'play-videos';
+
+drop policy if exists auth_video_read  on storage.objects;
+drop policy if exists auth_video_write on storage.objects;
+drop policy if exists auth_video_del   on storage.objects;
+
+create policy auth_video_read  on storage.objects for select to authenticated using (bucket_id = 'play-videos' and public.is_staff());
+create policy auth_video_write on storage.objects for insert to authenticated with check (bucket_id = 'play-videos' and public.is_staff());
+create policy auth_video_del   on storage.objects for delete to authenticated using (bucket_id = 'play-videos' and public.is_staff());
+
+-- Also turn off public sign-ups: Authentication → Sign In / Providers →
+-- disable "Allow new users to sign up". The app no longer offers sign-up.
+
+-- ============================================================
+-- Migration: never cascade-delete a player's stats
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- The app now retires players (players.active = false) instead of deleting
+-- them. These constraints make sure a delete from anywhere else can't silently
+-- wipe their stats, shots and subs either: it fails while history exists.
+alter table public.stat_events drop constraint if exists stat_events_player_id_fkey;
+alter table public.stat_events add constraint stat_events_player_id_fkey
+  foreign key (player_id) references public.players(id) on delete restrict;
+
+alter table public.shot_events drop constraint if exists shot_events_player_id_fkey;
+alter table public.shot_events add constraint shot_events_player_id_fkey
+  foreign key (player_id) references public.players(id) on delete restrict;
+
+alter table public.sub_events drop constraint if exists sub_events_player_id_in_fkey;
+alter table public.sub_events add constraint sub_events_player_id_in_fkey
+  foreign key (player_id_in) references public.players(id) on delete restrict;
+
+alter table public.sub_events drop constraint if exists sub_events_player_id_out_fkey;
+alter table public.sub_events add constraint sub_events_player_id_out_fkey
+  foreign key (player_id_out) references public.players(id) on delete restrict;

@@ -219,7 +219,7 @@ async function onSubmit() {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" @click.self="emit('close')">
+    <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" @click.self="!busy && emit('close')">
       <div class="card my-4 w-full max-w-2xl overflow-y-hidden border-ink-700 shadow-2xl" role="dialog" aria-modal="true">
         <!-- header -->
         <header class="flex items-center justify-between gap-3 border-b border-ink-700/60 px-5 py-4">

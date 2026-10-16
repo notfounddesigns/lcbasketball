@@ -16,6 +16,7 @@ const router = useRouter()
 const { plays, error: playsError, fetchPlays, createPlay, updatePlay } = usePlays()
 const { toast } = useToast()
 const { players, fetchPlayers } = useStats()
+const rosterPlayers = computed(() => players.value.filter((p) => p.active !== false))
 
 // null when on /plays/new; UUID string when on /plays/:id
 const playId = computed(() => (route.params.id as string) || null)
@@ -271,10 +272,10 @@ async function save() {
         </label>
 
         <!-- Roster reference -->
-        <div v-if="players.length" class="rounded-lg border border-ink-700 p-3">
+        <div v-if="rosterPlayers.length" class="rounded-lg border border-ink-700 p-3">
           <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Roster</p>
           <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-            <div v-for="pl in players" :key="pl.id" class="flex items-center gap-1.5">
+            <div v-for="pl in rosterPlayers" :key="pl.id" class="flex items-center gap-1.5">
               <span class="w-6 shrink-0 text-right font-mono text-ink-400 text-xs">#{{ pl.number ?? '—' }}</span>
               <span class="truncate">{{ pl.name }}</span>
             </div>

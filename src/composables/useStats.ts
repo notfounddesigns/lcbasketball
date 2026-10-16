@@ -69,12 +69,6 @@ export function useStats() {
     return data as Player
   }
 
-  async function deletePlayer(id: string): Promise<boolean> {
-    const { error: err } = await supabase.from('players').delete().eq('id', id)
-    if (err) { error.value = err.message; return false }
-    players.value = players.value.filter((p) => p.id !== id)
-    return true
-  }
 
   async function createGame(g: Omit<Game, 'id' | 'created_at'>): Promise<Game | null> {
     // Never persist a blank opponent — it renders as an empty card in the games list.
@@ -107,14 +101,28 @@ export function useStats() {
     return true
   }
 
+  // Supabase caps a single response (1,000 rows by default), so a season's
+  // worth of stat events has to be read page by page or the newest games
+  // silently drop out of the season totals.
   async function fetchAllEvents() {
     if (!isSupabaseConfigured) return
-    const { data, error: err } = await supabase
-      .from('stat_events')
-      .select('*')
-      .order('created_at', { ascending: true })
-    if (err) error.value = err.message
-    else allEvents.value = (data ?? []) as StatEvent[]
+    const PAGE = 1000
+    const rows: StatEvent[] = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error: err } = await supabase
+        .from('stat_events')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true }) // tie-break so pages never overlap or skip
+        .range(from, from + PAGE - 1)
+      if (err) {
+        error.value = err.message
+        return
+      }
+      rows.push(...((data ?? []) as StatEvent[]))
+      if (!data || data.length < PAGE) break
+    }
+    allEvents.value = rows
   }
 
   // Append-only: record one stat event (the audit trail). Undo deletes the last.
@@ -205,7 +213,6 @@ export function useStats() {
     recordSub,
     addPlayer,
     updatePlayer,
-    deletePlayer,
     createGame,
     updateGame,
     deleteGame,

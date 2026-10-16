@@ -46,12 +46,15 @@ last section swaps the permissive `dev_*` policies for authenticated-only ones.
 In the Supabase dashboard:
 
 1. **Authentication → Sign In / Providers → Email** — enable it.
-2. Sign up through the app's login screen to create your account. With
-   Supabase's default "Confirm email" setting you'll get a confirmation link
-   first; for a private team tool you can turn confirmation off and skip that.
-3. **Disable new signups** once your staff have accounts. Everyone signed in
-   shares one program's data (there's no per-coach ownership), so an open
-   signup form is an open door to the roster.
+2. Create each coach's account in **Authentication → Users → Add user →
+   Create new user** (with a password). The app has no sign-up screen.
+3. **Disable new signups** (Authentication → Sign In / Providers → "Allow new
+   users to sign up").
+4. Run the **staff allow-list** migration in `schema.sql`. It seeds the
+   `staff` table from the existing accounts — review it, delete anyone who
+   isn't coaching staff, and add new coaches with
+   `insert into public.staff (email) values ('coach@example.com');`.
+   Only allow-listed emails can read or change data or clips.
 
 > Ran only the top of `schema.sql` and left the `dev_*` policies in place? The
 > login screen works, but the `anon` key still has full access — anyone can read
@@ -94,7 +97,7 @@ src/
     VideoUploader.vue       Storage upload + inline playback
     AppNav.vue
   views/
-    LoginView.vue              sign in / sign up (the only ungated route)
+    LoginView.vue              sign in (the only ungated route)
     AccountView.vue            who you're signed in as + sign out
     PlaysView.vue              playbook / scouting / practice-plan tabs + CRUD
     StatsView.vue              roster, games, live tracker, box score, CSV
@@ -131,8 +134,10 @@ they were headed). The guard is UX only — the real enforcement is the
 `authenticated` RLS policies, so a faked client-side session still reads
 nothing.
 
-All signed-in users share one program's data: no owner column, no per-coach
-scoping. That matches a single staff, and it's why signups should stay closed.
+Access is limited to emails on the `staff` allow-list: every RLS policy (and
+the clip storage policies) checks `public.is_staff()`. A valid login that
+isn't on the list is told so at sign-in and signed straight back out.
+Allow-listed coaches share one program's data — there's no per-coach scoping.
 
 **Password resets** aren't in the app. Supabase can send a reset link
 (`resetPasswordForEmail`), but that needs a redirect target and a "set a new
@@ -141,10 +146,5 @@ dashboard.
 
 ## Remaining gaps
 
-1. **Clips are public by URL.** The `play-videos` bucket is public, so
-   `getPublicUrl()` links play without a session. The auth migration gates
-   uploads and deletes, not reads. To close it: make the bucket private and
-   switch `resolveVideoUrl()` in `usePlays.ts` / `usePracticePlan.ts` to
-   `createSignedUrl()`.
-2. **No per-user ownership.** Add a `user_id` column and owner-scoped policies
+1. **No per-user ownership.** Add a `user_id` column and owner-scoped policies
    if two coaching staffs ever share one project.

@@ -10,7 +10,7 @@ import type {
   Point,
   TextElement,
 } from '@/types'
-import { ArrowUturnLeftIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, HandRaisedIcon, PencilIcon, ArrowUpRightIcon, UserPlusIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/vue/24/outline';
+import { ArrowUturnLeftIcon, BackspaceIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, HandRaisedIcon, PencilIcon, ArrowUpRightIcon, UserPlusIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/vue/24/outline';
 import { useConfirm } from '@/composables/useConfirm'
 
 const { confirm } = useConfirm()
@@ -629,7 +629,16 @@ function onPointerLeave() {
   onPointerUp()
 }
 
-function clearAll() {
+// Wipes the whole phase, so it asks first (undo only steps back one element).
+async function clearAll() {
+  if (!elements.value.length) return
+  const ok = await confirm({
+    title: 'Clear phase',
+    message: 'Remove everything drawn in this phase?',
+    confirmText: 'Clear',
+    tone: 'danger',
+  })
+  if (!ok) return
   commit([])
   markerLabel.value = '1'
 }
@@ -820,10 +829,36 @@ const allElements = computed<DiagramElement[]>(() => {
 const teamColor = { home: '#cc0000', away: '#e8743b', ball: '#e7c993' } as const
 
 // ---------- PNG export ----------
-function exportPng(filename = 'play.png') {
+// An SVG drawn through <img> can't load external resources, so the watermark
+// has to travel inside the markup as a data URL. Fetched once, then cached.
+let logoDataUrl: Promise<string | null> | null = null
+function inlineLogo(): Promise<string | null> {
+  logoDataUrl ??= fetch(logoUrl)
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.statusText))))
+    .then((blob) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    }))
+    .catch(() => null) // export still works, just without the watermark
+  return logoDataUrl
+}
+
+async function exportPng(filename = 'play.png') {
   const svg = svgRef.value
   if (!svg) return
-  const svgStr = new XMLSerializer().serializeToString(svg)
+  // Editor chrome (selection ring/handles, eraser ring, open text box) must
+  // not end up in the picture.
+  commitTextEdit()
+  selectedId.value = null
+  eraserPos.value = null
+  await nextTick()
+
+  const logo = await inlineLogo()
+  let svgStr = new XMLSerializer().serializeToString(svg)
+  if (logo) svgStr = svgStr.replace(`href="${logoUrl}"`, `href="${logo}"`)
+
   const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const img = new Image()
@@ -844,6 +879,10 @@ function exportPng(filename = 'play.png') {
     a.href = canvas.toDataURL('image/png')
     a.download = filename
     a.click()
+  }
+  img.onerror = () => {
+    URL.revokeObjectURL(url)
+    window.alert('Could not export the diagram as an image.')
   }
   img.src = url
 }
@@ -1188,7 +1227,7 @@ defineExpose({ exportPng })
           class="flex flex-1 items-center justify-center py-1.5 transition"
           :class="[tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk']"
           :title="t"
-          @click="tool = t, tool === 'undo' ? [undo(), tool = 'pen'] : tool === 'erase' ? [clearAll(), tool = 'pen'] : null"
+          @click="t === 'undo' ? undo() : (tool = t)"
         >
           <ArrowUturnLeftIcon v-if="t === 'undo'" class="h-5 w-5" />
           <HandRaisedIcon v-if="t === 'select'" class="h-5 w-5" />
@@ -1196,7 +1235,7 @@ defineExpose({ exportPng })
           <ArrowUpRightIcon v-else-if="t === 'arrow'" class="h-5 w-5" />
           <UserPlusIcon v-else-if="t === 'marker'" class="h-5 w-5" />
           <ChatBubbleBottomCenterTextIcon v-else-if="t === 'text'" class="h-5 w-5" />
-          <TrashIcon v-else-if="t === 'erase'" class="h-5 w-5" />
+          <BackspaceIcon v-else-if="t === 'erase'" class="h-5 w-5" />
         </button>
       </div>
     </div>

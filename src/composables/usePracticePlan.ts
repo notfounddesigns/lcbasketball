@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { supabase, VIDEO_BUCKET, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase, VIDEO_BUCKET, isSupabaseConfigured, withSignedUrls } from '@/lib/supabase'
 import type {
   PracticePlan,
   PracticePlanDraft,
@@ -17,21 +17,15 @@ const error = ref<string | null>(null)
 const PLAN_SELECT =
   '*, items:practice_plan_items(*, play:plays(id, name, diagram)), videos:practice_plan_videos(*)'
 
-function resolveVideoUrl(storage_path: string): string | null {
-  if (!isSupabaseConfigured) return null
-  const { data } = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(storage_path)
-  return data.publicUrl ?? null
-}
-
-function hydrate(row: any): PracticePlan {
-  return {
+// Sort each plan's blocks and sign every clip across the plans in one batch.
+async function hydrate(rows: any[]): Promise<PracticePlan[]> {
+  const signed = await withSignedUrls(rows.flatMap((r) => (r.videos ?? []) as PracticePlanVideo[]))
+  const byId = new Map(signed.map((v) => [v.id, v]))
+  return rows.map((row) => ({
     ...row,
     items: [...(row.items ?? [])].sort((a: any, b: any) => a.sort_order - b.sort_order),
-    videos: (row.videos ?? []).map((v: PracticePlanVideo) => ({
-      ...v,
-      url: resolveVideoUrl(v.storage_path),
-    })),
-  } as PracticePlan
+    videos: ((row.videos ?? []) as PracticePlanVideo[]).map((v) => byId.get(v.id) ?? v),
+  })) as PracticePlan[]
 }
 
 // Most recent practice first; undated plans sink to the bottom.
@@ -61,7 +55,7 @@ export function usePracticePlan() {
       .order('created_at', { ascending: false })
 
     if (err) error.value = err.message
-    else plans.value = sortPlans((data ?? []).map(hydrate))
+    else plans.value = sortPlans(await hydrate(data ?? []))
     loading.value = false
   }
 
@@ -76,13 +70,14 @@ export function usePracticePlan() {
       error.value = err.message
       return null
     }
-    const plan = hydrate(data)
+    const [plan] = await hydrate([data])
     const without = plans.value.filter((p) => p.id !== plan.id)
     plans.value = sortPlans([...without, plan])
     return plan
   }
 
-  async function insertBlocks(planId: string, blocks: TimeBlockDraft[]): Promise<boolean> {
+  // Returns the ids of the inserted rows, or null on failure.
+  async function insertBlocks(planId: string, blocks: TimeBlockDraft[]): Promise<string[] | null> {
     const rows = blocks
       .filter((b) => b.label.trim() || b.play_id || b.notes.trim())
       .map((b, i) => ({
@@ -93,28 +88,35 @@ export function usePracticePlan() {
         sort_order: i,
         notes: b.notes.trim() || null,
       }))
-    if (!rows.length) return true
+    if (!rows.length) return []
 
-    const { error: insErr } = await supabase.from('practice_plan_items').insert(rows)
+    const { data, error: insErr } = await supabase
+      .from('practice_plan_items')
+      .insert(rows)
+      .select('id')
     if (insErr) {
       error.value = insErr.message
-      return false
+      return null
     }
-    return true
+    return (data ?? []).map((r: { id: string }) => r.id)
   }
 
   // On save the blocks are rewritten wholesale rather than diffed — nothing
   // references an item row by id, so a clean replace keeps ordering honest.
+  // The new rows go in first and only then are the old ones removed, so a
+  // failure part-way leaves the previous blocks in place instead of an empty
+  // plan. (If the cleanup fails, the next successful save clears the extras.)
   async function replaceBlocks(planId: string, blocks: TimeBlockDraft[]): Promise<boolean> {
-    const { error: delErr } = await supabase
-      .from('practice_plan_items')
-      .delete()
-      .eq('plan_id', planId)
+    const keep = await insertBlocks(planId, blocks)
+    if (!keep) return false
+    let del = supabase.from('practice_plan_items').delete().eq('plan_id', planId)
+    if (keep.length) del = del.not('id', 'in', `(${keep.join(',')})`)
+    const { error: delErr } = await del
     if (delErr) {
       error.value = delErr.message
       return false
     }
-    return insertBlocks(planId, blocks)
+    return true
   }
 
   async function createPlan(
@@ -132,7 +134,12 @@ export function usePracticePlan() {
       return null
     }
     const id = (data as { id: string }).id
-    await insertBlocks(id, blocks)
+    if (!(await insertBlocks(id, blocks))) {
+      // Don't leave a half-saved, block-less plan behind: the modal stays open
+      // with the coach's edits so they can retry.
+      await supabase.from('practice_plans').delete().eq('id', id)
+      return null
+    }
     return reloadPlan(id)
   }
 
@@ -147,7 +154,7 @@ export function usePracticePlan() {
       error.value = err.message
       return null
     }
-    await replaceBlocks(id, blocks)
+    if (!(await replaceBlocks(id, blocks))) return null
     return reloadPlan(id)
   }
 
@@ -192,7 +199,7 @@ export function usePracticePlan() {
       error.value = insErr.message
       return null
     }
-    const video: PracticePlanVideo = { ...(data as PracticePlanVideo), url: resolveVideoUrl(path) }
+    const [video] = await withSignedUrls([data as PracticePlanVideo])
 
     const plan = plans.value.find((p) => p.id === planId)
     if (plan) plan.videos = [...(plan.videos ?? []), video]
