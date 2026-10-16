@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePracticePlan } from '@/composables/usePracticePlan'
 import { blockRanges, blockTitle, formatDuration, formatPlanDate, formatTimeWindow, totalMinutes } from '@/lib/practice-utils'
 import { diagramPhases } from '@/lib/diagram-utils'
 import CourtCanvas from '@/components/CourtCanvas.vue'
+import PrintToolbar from '@/components/PrintToolbar.vue'
 
 const route = useRoute()
 const { plans, fetchPlans } = usePracticePlan()
@@ -28,23 +29,35 @@ const rows = computed(() =>
 
 const ready = ref(false)
 
+let printTimer: ReturnType<typeof setTimeout> | undefined
+
 onMounted(async () => {
   if (!plans.value.length) await fetchPlans()
   ready.value = true
+  // Nothing to print for a missing practice plan — show "not found" instead of
+  // sending the loading screen to the printer.
+  if (!plan.value) return
   // Wait for Teleport + CourtCanvas to mount into <body> before printing
   await nextTick()
-  setTimeout(() => window.print(), 400)
+  printTimer = setTimeout(() => window.print(), 400)
 })
+
+onBeforeUnmount(() => clearTimeout(printTimer))
 </script>
 
 <template>
-  <div v-if="!ready || !plan" class="flex h-screen items-center justify-center text-ink-500">
+  <div v-if="!ready" class="flex h-screen items-center justify-center text-ink-500">
     Loading…
+  </div>
+  <div v-else-if="!plan" class="flex h-screen flex-col items-center justify-center gap-3 text-ink-500">
+    <p>This practice plan couldn't be found.</p>
+    <RouterLink to="/practice" class="btn-ghost text-sm">Back</RouterLink>
   </div>
 
   <!-- Teleport to <body> so the print CSS selector works — see PrintPlayView. -->
   <Teleport v-else to="body">
     <div class="print-sheet bg-white text-black">
+      <PrintToolbar back-to="/practice" />
       <!-- Page 1: Quick View — the whole session at a glance, no diagrams -->
       <div class="print-page">
         <blockquote v-if="plan.quote" class="mb-4 text-center">

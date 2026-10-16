@@ -5,7 +5,7 @@ import { useStats } from '@/composables/useStats'
 import { useShotChart } from '@/composables/useShotChart'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
-import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, seasonStatsToCsv } from '@/lib/stats-utils'
+import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, formatPct, periodLabel, seasonStatsToCsv, teamTotals } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
@@ -14,7 +14,7 @@ import { ArchiveBoxIcon, ArrowLeftIcon, ArrowsRightLeftIcon, ArrowUturnUpIcon, A
 const {
   players, games, events, allEvents, subEvents, error,
   fetchPlayers, fetchGames, fetchEvents, fetchAllEvents,
-  fetchSubEvents, recordSub,
+  fetchSubEvents, recordSub, deleteSub,
   addPlayer, updatePlayer,
   createGame, updateGame, deleteGame,
   recordStat, undoLastFor,
@@ -36,16 +36,40 @@ const activeGame = ref<Game | null>(null)
 
 // ---- Period tracking ----
 const activePeriod = ref(1)
-const PERIODS = [
-  { label: 'Q1', value: 1 },
-  { label: 'Q2', value: 2 },
-  { label: 'Q3', value: 3 },
-  { label: 'Q4', value: 4 },
-  { label: 'OT', value: 5 },
-]
+// Q1–Q4 plus one OT by default; "+OT" adds more for multi-overtime games.
+const maxPeriod = ref(5)
+const PERIODS = computed(() =>
+  Array.from({ length: maxPeriod.value }, (_, i) => ({ label: periodLabel(i + 1), value: i + 1 })),
+)
+function addOvertime() {
+  maxPeriod.value += 1
+  activePeriod.value = maxPeriod.value
+}
+
+// The open game and its quarter survive a refresh or an app restart mid-game,
+// so stats after a reload aren't filed under Q1.
+const LIVE_GAME_KEY = 'lcbb-live-game'
+function readLiveGame(): { gameId: string; period: number } | null {
+  try {
+    return JSON.parse(localStorage.getItem(LIVE_GAME_KEY) ?? 'null')
+  } catch {
+    return null
+  }
+}
+watch([activeGame, activePeriod], ([g, period]) => {
+  try {
+    if (g) localStorage.setItem(LIVE_GAME_KEY, JSON.stringify({ gameId: g.id, period }))
+    else localStorage.removeItem(LIVE_GAME_KEY)
+  } catch {
+    // Storage can be unavailable (private mode); resuming is a convenience.
+  }
+})
 
 onMounted(async () => {
   await Promise.all([fetchPlayers(), fetchGames(), fetchAllEvents()])
+  const live = readLiveGame()
+  const game = live && games.value.find((g) => g.id === live.gameId)
+  if (game && !activeGame.value) await openGame(game)
 })
 
 // ----- roster drawer -----
@@ -138,11 +162,21 @@ async function onCreateGame() {
 }
 
 async function openGame(g: Game) {
+  const live = readLiveGame()
   activeGame.value = g
   activePeriod.value = 1
+  maxPeriod.value = 5
   selectedPlayerId.value = null
   editingScore.value = false
+  subPickerOpen.value = false
   await Promise.all([fetchEvents(g.id), fetchSubEvents(g.id)])
+  if (activeGame.value?.id !== g.id) return // switched again while loading
+  // Resume where the game left off: the saved quarter, else the latest one
+  // that has stats.
+  const latest = Math.max(1, ...events.value.map((e) => e.period ?? 1))
+  const resume = live?.gameId === g.id ? live.period : latest
+  maxPeriod.value = Math.max(5, latest, resume)
+  activePeriod.value = resume
 }
 
 async function onDeleteGame(g: Game) {
@@ -220,47 +254,25 @@ let flashSeq = 0
 function pushFlash(playerId: string, stat: StatType, positive: boolean, color: 'green' | 'red') {
   const meta = STAT_FLASH[stat]
   if (!meta) return
-  let id = ++flashSeq
+  const sign = positive ? '+' : '-'
+  const add = (col: string, text: string) => {
+    const id = ++flashSeq
+    flashes.value = [...flashes.value, { id, playerId, col, text, positive, color }]
+    // Drop each badge once its animation (0.85s) has finished.
+    setTimeout(() => {
+      flashes.value = flashes.value.filter((f) => f.id !== id)
+    }, 900)
+  }
   if (stat === 'fg_made' || stat === 'three_made' || stat === 'ft_made') {
-    flashes.value = [
-      ...flashes.value,
-      { id, playerId, col: meta.col, text: `${positive ? '+' : '-'}1`, positive, color }
-    ]
-    if (stat === 'three_made') {
-      id = ++flashSeq
-      flashes.value = [
-        ...flashes.value,
-        { id, playerId, col: 'fg', text: `${positive ? '+' : '-'}1`, positive, color }
-      ]
-    }
-    id = ++flashSeq
-    flashes.value = [
-      ...flashes.value,
-      { id, playerId, col: 'pts', text: `${positive ? '+' : '-'}${meta.amount}`, positive, color }
-    ] 
-  }
-  else if (stat === 'fg_miss' || stat === 'three_miss' || stat === 'ft_miss') {
-    flashes.value = [
-      ...flashes.value,
-      { id, playerId, col: meta.col, text: `${positive ? '+' : '-'}1`, positive, color }
-    ]
-    if (stat === 'three_miss') {
-      id = ++flashSeq
-      flashes.value = [
-        ...flashes.value,
-        { id, playerId, col: 'fg', text: `${positive ? '+' : '-'}1`, positive, color }
-      ]
-    }
+    add(meta.col, `${sign}1`)
+    if (stat === 'three_made') add('fg', `${sign}1`)
+    add('pts', `${sign}${meta.amount}`)
+  } else if (stat === 'fg_miss' || stat === 'three_miss' || stat === 'ft_miss') {
+    add(meta.col, `${sign}1`)
+    if (stat === 'three_miss') add('fg', `${sign}1`)
   } else {
-    flashes.value = [
-      ...flashes.value,
-      { id, playerId, col: meta.col, text: `${positive ? '+' : '-'}${meta.amount}`, positive, color }
-    ]
+    add(meta.col, `${sign}${meta.amount}`)
   }
-  // Drop the flash once its animation (0.85s) has finished.
-  setTimeout(() => {
-    flashes.value = flashes.value.filter((f) => f.id !== id)
-  }, 900)
 }
 
 function flashesFor(playerId: string, col: string) {
@@ -308,10 +320,11 @@ function exportSeasonCsv() {
 
 // ----- final score -----
 const editingScore = ref(false)
-const ourScoreInput = ref<number | null>(null)
-const oppScoreInput = ref<number | null>(null)
+const ourScoreInput = ref<number | string | null>(null)
+const oppScoreInput = ref<number | string | null>(null)
 
-const teamPoints = computed(() => boxScore.value.reduce((sum, r) => sum + r.pts, 0))
+const boxScoreTotals = computed(() => teamTotals(boxScore.value))
+const teamPoints = computed(() => boxScoreTotals.value.pts)
 
 function hasFinal(g: Game) {
   return g.our_score != null && g.opp_score != null
@@ -333,8 +346,10 @@ function startEditScore() {
 
 async function saveScore() {
   if (!activeGame.value) return
-  const ours = ourScoreInput.value
-  const theirs = oppScoreInput.value
+  // An emptied number input yields '' — that means "clear the score".
+  const blankToNull = (n: number | string | null) => (n === '' || n == null ? null : Number(n))
+  const ours = blankToNull(ourScoreInput.value)
+  const theirs = blankToNull(oppScoreInput.value)
   const valid = (n: number | null) => n == null || (Number.isInteger(n) && n >= 0)
   if (!valid(ours) || !valid(theirs)) {
     toast('Scores must be whole numbers', 'error')
@@ -347,7 +362,7 @@ async function saveScore() {
   }
   activeGame.value = updated
   editingScore.value = false
-  toast('Final score saved')
+  toast(ours == null && theirs == null ? 'Final score cleared' : 'Final score saved')
 }
 
 // ----- on-floor lineup (derived from the sub log) -----
@@ -378,61 +393,37 @@ async function doSub(playerIdOut: string) {
   subPickerOpen.value = false
 }
 
+// A sub brings a bench player on for someone on the floor — so the selected
+// player must be on the bench, and only on-floor players can go out.
+const selectedOnCourt = computed(() => !!selectedPlayerId.value && onCourtIds.value.has(selectedPlayerId.value))
+
+async function undoLastSub() {
+  const last = subEvents.value[subEvents.value.length - 1]
+  if (!last) return
+  if (await deleteSub(last.id)) toast('Substitution undone')
+}
+
+function playerName(id: string) {
+  return players.value.find((p) => p.id === id)?.name ?? 'Unknown'
+}
+
 // ----- season stats -----
 const seasonBoxScore = computed(() => buildBoxScore(rosterFor(allEvents.value), allEvents.value))
 
-interface SeasonRow {
-  player_id: string
-  name: string
-  number: number | null
-  gp: number
-  pts: number
-  ppg: string
-  fgm: number
-  fga: number
-  fgPct: string
-  tpm: number
-  tpa: number
-  tpPct: string
-  ftm: number
-  fta: number
-  ftPct: string
-  reb: number
-  rpg: string
-  ast: number
-  apg: string
-  stl: number
-  blk: number
-  tov: number
-  pf: number
-}
-
-const seasonStats = computed<SeasonRow[]>(() => {
-  return seasonBoxScore.value.map((r) => {
-    const playerGameIds = new Set(
-      allEvents.value
-        .filter((e) => e.player_id === r.player_id)
-        .map((e) => e.game_id),
-    )
-    const actualGp = playerGameIds.size
-    const ppg = actualGp > 0 ? (r.pts / actualGp).toFixed(1) : '—'
-    const rpg = actualGp > 0 ? (r.reb / actualGp).toFixed(1) : '—'
-    const apg = actualGp > 0 ? (r.ast / actualGp).toFixed(1) : '—'
-    const fgPct = r.fga > 0 ? Math.round((r.fgm / r.fga) * 100) + '%' : '—'
-    const tpPct = r.tpa > 0 ? Math.round((r.tpm / r.tpa) * 100) + '%' : '—'
-    const ftPct = r.fta > 0 ? Math.round((r.ftm / r.fta) * 100) + '%' : '—'
-
-    return {
-      player_id: r.player_id, name: r.name, number: r.number,
-      gp: actualGp, pts: r.pts, ppg,
-      fgm: r.fgm, fga: r.fga, fgPct,
-      tpm: r.tpm, tpa: r.tpa, tpPct,
-      ftm: r.ftm, fta: r.fta, ftPct,
-      reb: r.reb, rpg, ast: r.ast, apg,
-      stl: r.stl, blk: r.blk, tov: r.tov, pf: r.pf,
-    }
-  })
-})
+// Same numbers as the season CSV (buildSeasonStats), formatted for display.
+const seasonStats = computed(() =>
+  buildSeasonStats(rosterFor(allEvents.value), allEvents.value).map((r) => ({
+    ...r,
+    ppg: r.gp ? r.ppg.toFixed(1) : '—',
+    rpg: r.gp ? r.rpg.toFixed(1) : '—',
+    apg: r.gp ? r.apg.toFixed(1) : '—',
+    fgPct: formatPct(r.fgm, r.fga),
+    tpPct: formatPct(r.tpm, r.tpa),
+    ftPct: formatPct(r.ftm, r.fta),
+  })),
+)
+const seasonTotals = computed(() => teamTotals(seasonBoxScore.value))
+const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)).size)
 </script>
 
 <template>
@@ -449,7 +440,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
       </button>
       <span class="grow"></span>
       <button
-        v-if="activeGame && selectedPlayer && shots.filter((s) => s.player_id === selectedPlayerId).length > 0"
+        v-if="activeGame && selectedPlayer && selectedHasEvents"
         class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-away py-1 text-xs hover:bg-away/90"
         title="Undo last stat"
         @click="onUndo(selectedPlayerId!)">
@@ -590,22 +581,35 @@ const seasonStats = computed<SeasonRow[]>(() => {
                 : 'bg-ink-700 text-ink-500 hover:text-chalk'"
               @click="activePeriod = p.value"
             >{{ p.label }}</button>
+            <button
+              class="rounded px-2 py-1 text-xs font-bold text-ink-500 hover:text-chalk"
+              title="Add another overtime" aria-label="Add another overtime"
+              @click="addOvertime"
+            >+OT</button>
           </div>
         </div>
 
         <!-- Sub picker (shown above main content when open) -->
         <div v-if="subPickerOpen && selectedPlayer" class="rounded-xl border border-yellow-500/30 bg-ink-800 p-3">
-          <p class="mb-2 text-xs text-ink-500">
+          <p v-if="selectedOnCourt" class="mb-2 text-xs text-ink-500">
+            <span class="font-semibold text-yellow-400">{{ selectedPlayer.name }}</span> is already on the floor —
+            select the bench player coming in, then tap sub.
+          </p>
+          <p v-else-if="!onCourtPlayers.length" class="mb-2 text-xs text-ink-500">
+            Nobody is on the floor yet — record a stat for the starters first.
+          </p>
+          <p v-else class="mb-2 text-xs text-ink-500">
             <span class="font-semibold text-yellow-400">{{ selectedPlayer.name }}</span> comes IN for:
           </p>
           <div class="flex flex-wrap gap-1.5">
-            <button
-              v-for="other in [...onCourtPlayers, ...activePlayers.filter(op => !onCourtIds.has(op.id))].filter(op => op.id !== selectedPlayerId)"
-              :key="other.id"
-              class="rounded-lg px-3 py-1.5 text-xs text-chalk hover:bg-rim hover:text-white"
-              :class="onCourtIds.has(other.id) ? 'bg-ink-600 ring-1 ring-green-500/60' : 'bg-ink-700'"
-              @click="doSub(other.id)"
-            >#{{ other.number ?? '—' }} {{ other.name }}</button>
+            <template v-if="!selectedOnCourt">
+              <button
+                v-for="other in onCourtPlayers"
+                :key="other.id"
+                class="rounded-lg bg-ink-600 px-3 py-1.5 text-xs text-chalk ring-1 ring-green-500/60 hover:bg-rim hover:text-white"
+                @click="doSub(other.id)"
+              >#{{ other.number ?? '—' }} {{ other.name }}</button>
+            </template>
             <button class="text-ink-500 hover:text-chalk" title="Cancel" aria-label="Cancel" @click="subPickerOpen = false"><XMarkIcon class="h-5 w-5" /></button>
           </div>
         </div>
@@ -711,16 +715,42 @@ const seasonStats = computed<SeasonRow[]>(() => {
                     <td class="relative">{{ r.pf }}<StatFlash :items="flashesFor(r.player_id, 'pf')" /></td>
                   </tr>
                 </tbody>
+                <tfoot v-if="boxScore.length" class="font-semibold text-chalk">
+                  <tr class="border-t border-ink-600">
+                    <td class="py-2 text-left">Team</td>
+                    <td>{{ boxScoreTotals.pts }}</td>
+                    <td :title="formatPct(boxScoreTotals.fgm, boxScoreTotals.fga)">{{ boxScoreTotals.fgm }}/{{ boxScoreTotals.fga }}</td>
+                    <td :title="formatPct(boxScoreTotals.tpm, boxScoreTotals.tpa)">{{ boxScoreTotals.tpm }}/{{ boxScoreTotals.tpa }}</td>
+                    <td :title="formatPct(boxScoreTotals.ftm, boxScoreTotals.fta)">{{ boxScoreTotals.ftm }}/{{ boxScoreTotals.fta }}</td>
+                    <td>{{ boxScoreTotals.reb }}</td><td>{{ boxScoreTotals.ast }}</td><td>{{ boxScoreTotals.stl }}</td>
+                    <td>{{ boxScoreTotals.blk }}</td><td>{{ boxScoreTotals.tov }}</td><td>{{ boxScoreTotals.pf }}</td>
+                  </tr>
+                  <tr class="text-xs font-normal text-ink-500">
+                    <td class="text-left">Shooting</td>
+                    <td></td>
+                    <td>{{ formatPct(boxScoreTotals.fgm, boxScoreTotals.fga) }}</td>
+                    <td>{{ formatPct(boxScoreTotals.tpm, boxScoreTotals.tpa) }}</td>
+                    <td>{{ formatPct(boxScoreTotals.ftm, boxScoreTotals.fta) }}</td>
+                    <td colspan="6"></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
             <!-- Sub log -->
             <div v-if="subEvents.length > 0" class="rounded-xl bg-ink-800 p-3">
-              <p class="mb-1 text-xs font-semibold text-ink-500">Substitutions</p>
+              <div class="mb-1 flex items-center">
+                <p class="text-xs font-semibold text-ink-500">Substitutions</p>
+                <button
+                  class="ml-auto inline-flex items-center gap-1 text-xs text-ink-500 hover:text-chalk"
+                  title="Undo last substitution"
+                  @click="undoLastSub"
+                ><ArrowUturnLeftIcon class="h-4 w-4" />Undo</button>
+              </div>
               <ul class="space-y-0.5 text-xs text-ink-500">
                 <li v-for="sub in subEvents" :key="sub.id">
-                  Q{{ sub.period }}: {{ players.find(p => p.id === sub.player_id_in)?.name ?? 'Unknown' }}
-                  IN for {{ players.find(p => p.id === sub.player_id_out)?.name ?? 'Unknown' }}
+                  {{ periodLabel(sub.period) }}: {{ playerName(sub.player_id_in) }}
+                  IN for {{ playerName(sub.player_id_out) }}
                 </li>
               </ul>
             </div>
@@ -822,6 +852,22 @@ const seasonStats = computed<SeasonRow[]>(() => {
               <td>{{ r.stl }}</td><td>{{ r.blk }}</td><td>{{ r.tov }}</td><td>{{ r.pf }}</td>
             </tr>
           </tbody>
+          <tfoot v-if="seasonStats.length" class="font-semibold text-chalk">
+            <tr class="border-t border-ink-600">
+              <td class="py-1.5 text-left">Team</td>
+              <td class="text-ink-500">{{ seasonGames }}</td>
+              <td>{{ seasonTotals.pts }}</td>
+              <td class="text-rim">{{ seasonGames ? (seasonTotals.pts / seasonGames).toFixed(1) : '—' }}</td>
+              <td>{{ formatPct(seasonTotals.fgm, seasonTotals.fga) }}</td>
+              <td>{{ formatPct(seasonTotals.tpm, seasonTotals.tpa) }}</td>
+              <td>{{ formatPct(seasonTotals.ftm, seasonTotals.fta) }}</td>
+              <td>{{ seasonTotals.reb }}</td>
+              <td class="text-ink-500">{{ seasonGames ? (seasonTotals.reb / seasonGames).toFixed(1) : '—' }}</td>
+              <td>{{ seasonTotals.ast }}</td>
+              <td class="text-ink-500">{{ seasonGames ? (seasonTotals.ast / seasonGames).toFixed(1) : '—' }}</td>
+              <td>{{ seasonTotals.stl }}</td><td>{{ seasonTotals.blk }}</td><td>{{ seasonTotals.tov }}</td><td>{{ seasonTotals.pf }}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </template>

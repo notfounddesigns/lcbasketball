@@ -29,13 +29,13 @@
 27. - [x] Season stats CSV export — "Export Season CSV" button on the Season tab similar to the per-game export
 28. - [x] Lineup / on-court tracker — show which 5 players are currently on the floor based on sub events, highlight them in the tracker
 29. - [ ] Per-quarter box score — reuse the shot chart's All/Q1–OT filter on the box score; `period` is already stored on every stat event (completes the splits promised by #15)
-30. - [ ] Team totals row in the game box score and season table (team FG%, 3P%, FT%)
+30. - [x] Team totals row in the game box score and season table (team FG%, 3P%, FT%)
 31. - [ ] Edit game details — `updateGame` exists but only the final score is editable; add opponent, date, location and notes
 32. - [ ] Starting five at tip-off — let the coach set starters so the on-floor lineup is right from the first possession instead of inferred from stats/subs
 33. - [ ] Opponent scoring by quarter, then plus/minus and minutes played computed from the sub log
 34. - [ ] Player game log — tap a season row to see game-by-game lines and a season shot chart for that player
 35. - [ ] Foul alerts — warn at 4 and 5 personal fouls; team fouls per quarter with a bonus indicator
-36. - [ ] Multiple overtimes — only one OT (period 5) exists today; add OT2+
+36. - [x] Multiple overtimes — only one OT (period 5) exists today; add OT2+
 37. - [ ] Offline queue for stat taps — store writes in IndexedDB and replay when the connection returns (gyms with bad Wi-Fi); also add Workbox `runtimeCaching` so plays/plans can be read offline
 38. - [ ] Whole-playbook export — multi-play PDF/print of the playbook or a category with a cover page and table of contents
 39. - [ ] Play tags and filters (e.g. "vs zone", "late clock", "ATO"); include the notes text in search
@@ -77,26 +77,26 @@
 21. - [x] Shot can be credited to the wrong player — `confirmShot` re-reads `props.playerId`/`props.period` after `await recordShot`; capture them before awaiting
 22. - [ ] Shot markers and box-score stats can drift apart — `recordShot`'s result is ignored, and shots/stats are paired only by time, so Undo can delete an unrelated shot. Add a `stat_event_id` column on `shot_events`
 23. - [ ] Jump shots from the free-throw line are logged as free throws (1 pt) — `getShotType` treats any tap near the FT line as an FT. Add an explicit FT button instead of inferring from position
-24. - [ ] Season tab is stale until reload — `recordStat`, `undoLastFor` and `deleteGame` update `events` but not `allEvents`
-25. - [ ] Switching games can show the previous game's events/subs/shots — `openGame` doesn't clear them first and late responses aren't ignored
-26. - [ ] Reopening a game (or refreshing) resets the quarter to Q1, so later stats are filed under the wrong period — persist the open game and quarter
-27. - [ ] Desktop Undo button only appears when the selected player has shots (`StatsView.vue`) — use `selectedHasEvents` like the phone pad
-28. - [ ] Stat flash badges leak — `pushFlash` reassigns `id`, so the cleanup timeout removes only the last badge of a made shot
-29. - [ ] A saved final score can't be cleared — an empty number input yields `''`, which fails validation
-30. - [ ] Sub picker allows impossible subs (bench player "out", on-court player "in"), subs can't be undone, and OT shows as "Q5" in the sub log
-31. - [ ] Season percentages differ between screen (whole %) and CSV (one decimal) — the view rebuilds rows instead of using `buildSeasonStats`
+24. - [x] Season tab is stale until reload — `recordStat`, `undoLastFor` and `deleteGame` update `events` but not `allEvents`
+25. - [x] Switching games can show the previous game's events/subs/shots — `openGame` doesn't clear them first and late responses aren't ignored
+26. - [x] Reopening a game (or refreshing) resets the quarter to Q1, so later stats are filed under the wrong period — persist the open game and quarter
+27. - [x] Desktop Undo button only appears when the selected player has shots (`StatsView.vue`) — use `selectedHasEvents` like the phone pad
+28. - [x] Stat flash badges leak — `pushFlash` reassigns `id`, so the cleanup timeout removes only the last badge of a made shot
+29. - [x] A saved final score can't be cleared — an empty number input yields `''`, which fails validation
+30. - [x] Sub picker allows impossible subs (bench player "out", on-court player "in"), subs can't be undone, and OT shows as "Q5" in the sub log
+31. - [x] Season percentages differ between screen (whole %) and CSV (one decimal) — the view rebuilds rows instead of using `buildSeasonStats`
 32. - [ ] Saving a play jumps back to phase 1 and can overwrite strokes drawn while the save was in flight — `updatePlay` replaces the store object, retriggering `watch(play)` which reloads the form
 33. - [ ] No unsaved-changes guard in the play editor or practice plan modal — back button, tab bar and practice-modal backdrop click discard edits without asking (the backdrop also isn't disabled while saving)
 34. - [ ] Reordering plays in one category wipes the saved order of other categories — `onDragOver` saves only the filtered ids (`PlaysView.vue`)
 35. - [ ] Deleting a play leaves its video files in Storage (rows cascade, files don't); a failed `play_videos` insert after upload leaves an orphan file; same pattern for practice plan clips, whose upload/delete failures are also ignored by the modal
 36. - [ ] Formation templates are placed for a half court — on a full court the players land along the sideline
-37. - [ ] Print views (play and practice plan) have no close/back button and cover the tab bar — in the installed PWA there's no way out; they also print the "Loading…" screen when the record isn't found
-38. - [ ] Supabase health check never runs — `App.vue` imports `useSupabaseHealth`/`healthMessage` but never calls them, so a paused project shows a raw "Failed to fetch"
-39. - [ ] No redirect to /login when the session ends (token refresh failure or sign-out in another tab) — views just start failing
-40. - [ ] Practice plan editor: the over/under-window message (`windowFit.text`) is computed but never rendered; duration-only blocks are dropped on save; a 0/blank duration saves as 1
-41. - [ ] Editor back button drops `?category=` and the Playbook/Scouting tab resets
+37. - [x] Print views (play and practice plan) have no close/back button and cover the tab bar — in the installed PWA there's no way out; they also print the "Loading…" screen when the record isn't found
+38. - [x] Supabase health check never runs — `App.vue` imports `useSupabaseHealth`/`healthMessage` but never calls them, so a paused project shows a raw "Failed to fetch"
+39. - [x] No redirect to /login when the session ends (token refresh failure or sign-out in another tab) — views just start failing
+40. - [x] Practice plan editor: the over/under-window message (`windowFit.text`) is computed but never rendered; duration-only blocks are dropped on save; a 0/blank duration saves as 1
+41. - [x] Editor back button drops `?category=` and the Playbook/Scouting tab resets
 42. - [ ] Duplicate play doesn't copy its video clips
-43. - [ ] No `pointercancel` handler on the court — a system-interrupted touch can leave a stroke or drag stuck
+43. - [x] No `pointercancel` handler on the court — a system-interrupted touch can leave a stroke or drag stuck
 
 ---
 

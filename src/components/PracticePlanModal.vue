@@ -256,6 +256,7 @@ async function onSubmit() {
             </div>
 
             <p v-if="windowFit" class="mt-1.5 flex items-center gap-2 text-xs" :class="windowFit.over ? 'text-red-300' : 'text-ink-500'">
+              <span>{{ windowFit.text }}</span>
               <button
                 v-if="suggestedEnd && suggestedEnd !== endTime"
                 class="btn-ghost px-2 py-0.5 text-[11px]"

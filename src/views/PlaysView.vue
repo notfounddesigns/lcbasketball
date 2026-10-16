@@ -16,7 +16,14 @@ const { confirm } = useConfirm()
 
 // ---- tabs: playbook / scouting ----
 type Tab = 'playbook' | 'scouting'
-const activeTab = ref<Tab>('playbook')
+// Lives in the URL (?tab=scouting) like the open category, so coming back from
+// the editor returns to the same tab.
+const activeTab = computed<Tab>({
+  get: () => (route.query.tab === 'scouting' ? 'scouting' : 'playbook'),
+  set: (tab) => {
+    router.push({ query: tab === 'scouting' ? { tab } : {} })
+  },
+})
 const search = ref('')
 
 const tabLabels: Record<Tab, string> = {
@@ -204,7 +211,7 @@ function onDragEnd() {
           'flex-1 py-2 text-sm font-medium transition',
           activeTab === tab ? 'bg-ink-700 text-chalk' : 'text-ink-500 hover:text-chalk',
         ]"
-        @click="activeTab = tab; openCategory(null)"
+        @click="search = ''; activeTab = tab"
       >
         {{ tabLabels[tab] }}
       </button>
