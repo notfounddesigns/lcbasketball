@@ -86,6 +86,22 @@ export function boxScoreToCsv(rows: BoxScoreRow[], gameLabel: string): string {
   return [header.join(','), ...lines].join('\n')
 }
 
+export function seasonStatsToCsv(rows: SeasonRow[]): string {
+  const header = [
+    'No', 'Player', 'GP', 'PTS', 'PPG', 'FGM', 'FGA', 'FG%', '3PM', '3PA', '3P%',
+    'FTM', 'FTA', 'FT%', 'OREB', 'DREB', 'REB', 'RPG', 'AST', 'APG', 'STL', 'BLK', 'TOV', 'PF',
+  ]
+  const lines = rows.map((r) =>
+    [
+      r.number ?? '', r.name, r.gp, r.pts, r.ppg, r.fgm, r.fga, r.fg_pct, r.tpm, r.tpa, r.three_pct,
+      r.ftm, r.fta, r.ft_pct, r.oreb, r.dreb, r.reb, r.rpg, r.ast, r.apg, r.stl, r.blk, r.tov, r.pf,
+    ]
+      .map((v) => (typeof v === 'string' && v.includes(',') ? `"${v}"` : v))
+      .join(','),
+  )
+  return [header.join(','), ...lines].join('\n')
+}
+
 export function downloadCsv(filename: string, csv: string) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
