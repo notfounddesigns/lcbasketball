@@ -10,8 +10,8 @@ const props = defineProps<{
   period: number
 }>()
 
-const { shots, fetchShots, recordShot } = useShotChart()
-const { recordStat } = useStats()
+const { shots, fetchShots, recordShot, deleteShot } = useShotChart()
+const { events, recordStat, deleteStatEvent } = useStats()
 
 // Court geometry — must match CourtCanvas.vue's half-court (10 SVG units = 1 foot, NFHS)
 const VB_W = 500
@@ -33,7 +33,24 @@ const PAINT_HALF_W = KEY_HALF_W + 5
 // Pending shot placement
 const pendingShot = ref<{ x: number; y: number } | null>(null)
 
+// Existing shot tapped for deletion
+const selectedShotId = ref<string | null>(null)
+const selectedShot = computed(() => shots.value.find((s) => s.id === selectedShotId.value) ?? null)
+
+// Which period's shots are overlaid on the chart
+const PERIOD_FILTERS: { label: string; value: number | 'all' }[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Q1', value: 1 },
+  { label: 'Q2', value: 2 },
+  { label: 'Q3', value: 3 },
+  { label: 'Q4', value: 4 },
+  { label: 'OT', value: 5 },
+]
+const periodFilter = ref<number | 'all'>('all')
+
 watch(() => props.gameId, (id) => {
+  selectedShotId.value = null
+  periodFilter.value = 'all'
   if (id) fetchShots(id)
 }, { immediate: true })
 
@@ -74,20 +91,25 @@ onBeforeUnmount(() => resizeObs?.disconnect())
 // Where the Made/Miss popup sits, in px within the chart wrapper. Derived from
 // the live element size rather than captured at tap time, so it stays anchored
 // to the shot through a resize or rotation.
-const pendingShotOffset = computed(() => {
-  if (!pendingShot.value) return null
+function popupOffset(pt: { x: number; y: number } | null) {
+  if (!pt) return null
   const { scale, offsetX, offsetY } = fitCourt(svgBox.value.w, svgBox.value.h)
   return {
-    left: offsetX + pendingShot.value.x * VB_W * scale,
-    top: offsetY + pendingShot.value.y * VB_H * scale,
+    left: offsetX + pt.x * VB_W * scale,
+    top: offsetY + pt.y * VB_H * scale,
   }
-})
+}
 
-// Filter displayed shots by selected player (or show all)
-const displayShots = computed<ShotEvent[]>(() => {
-  if (!props.playerId) return shots.value
-  return shots.value.filter((s) => s.player_id === props.playerId)
-})
+const pendingShotOffset = computed(() => popupOffset(pendingShot.value))
+const selectedShotOffset = computed(() => popupOffset(selectedShot.value))
+
+// Filter displayed shots by selected player and period (or show all)
+const displayShots = computed<ShotEvent[]>(() =>
+  shots.value.filter((s) =>
+    (!props.playerId || s.player_id === props.playerId) &&
+    (periodFilter.value === 'all' || s.period === periodFilter.value),
+  ),
+)
 
 // FG% summary
 const fgSummary = computed(() => {
@@ -160,6 +182,12 @@ function getShotType(nx: number, ny: number): 'ft' | 'two' | 'three' {
   return isThreePointer(nx, ny) ? 'three' : 'two'
 }
 
+function statFor(type: 'ft' | 'two' | 'three', made: boolean): StatType {
+  if (type === 'ft') return made ? 'ft_made' : 'ft_miss'
+  if (type === 'three') return made ? 'three_made' : 'three_miss'
+  return made ? 'fg_made' : 'fg_miss'
+}
+
 const pendingShotType = computed(() =>
   pendingShot.value ? getShotType(pendingShot.value.x, pendingShot.value.y) : null
 )
@@ -171,6 +199,10 @@ const shotTypeLabel = computed(() => {
 })
 
 function onCourtClick(e: MouseEvent) {
+  if (selectedShotId.value) {
+    selectedShotId.value = null
+    return
+  }
   if (!props.playerId) return // must select a player first
   if (pendingShot.value) {
     pendingShot.value = null
@@ -199,11 +231,7 @@ async function confirmShot(made: boolean) {
     return
   }
 
-  const type = getShotType(pendingShot.value.x, pendingShot.value.y)
-  let stat: StatType
-  if (type === 'ft') stat = made ? 'ft_made' : 'ft_miss'
-  else if (type === 'three') stat = made ? 'three_made' : 'three_miss'
-  else stat = made ? 'fg_made' : 'fg_miss'
+  const stat = statFor(getShotType(pendingShot.value.x, pendingShot.value.y), made)
 
   await recordShot(props.gameId, props.playerId, pendingShot.value.x, pendingShot.value.y, made, props.period)
   await recordStat(props.gameId, props.playerId, stat, props.period)
@@ -213,6 +241,47 @@ async function confirmShot(made: boolean) {
 
 function cancelPending() {
   pendingShot.value = null
+}
+
+function onShotClick(shot: ShotEvent) {
+  pendingShot.value = null
+  selectedShotId.value = selectedShotId.value === shot.id ? null : shot.id
+}
+
+// Every shot was recorded alongside a shooting stat_event; remove that one too
+// so the box score stays in sync. Shots and stats aren't linked by id, so pair
+// on player + stat + period and take the event logged closest in time.
+async function deleteSelectedShot() {
+  const shot = selectedShot.value
+  if (!shot) return
+  const stat = statFor(getShotType(shot.x, shot.y), shot.made)
+  const shotTime = Date.parse(shot.created_at)
+  const paired = events.value
+    .filter((e) => e.player_id === shot.player_id && e.stat === stat && e.period === shot.period)
+    .sort((a, b) => Math.abs(Date.parse(a.created_at) - shotTime) - Math.abs(Date.parse(b.created_at) - shotTime))[0]
+
+  if (await deleteShot(shot.id)) {
+    if (paired) await deleteStatEvent(paired.id)
+  }
+  selectedShotId.value = null
+}
+
+// Shape encodes shot type (circle 2PT, diamond 3PT, square FT) and fill encodes
+// the result (solid = made, hollow = miss), so markers read without color.
+function shotPath(shot: ShotEvent): string {
+  const cx = shot.x * VB_W
+  const cy = shot.y * VB_H
+  const type = getShotType(shot.x, shot.y)
+  if (type === 'three') {
+    const r = 8.5
+    return `M ${cx} ${cy - r} L ${cx + r} ${cy} L ${cx} ${cy + r} L ${cx - r} ${cy} Z`
+  }
+  if (type === 'ft') {
+    const h = 6
+    return `M ${cx - h} ${cy - h} H ${cx + h} V ${cy + h} H ${cx - h} Z`
+  }
+  const r = 6.5
+  return `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`
 }
 </script>
 
@@ -256,17 +325,35 @@ function cancelPending() {
         {{ playerId ? 'Tap court to place a shot' : 'Select a player to record shots' }}
         · {{ displayShots.length }} shot{{ displayShots.length !== 1 ? 's' : '' }}
       </p>
-      <span class="ml-auto flex flex-col items-center gap-2 text-ink-500 leading-3">
+      <span class="ml-auto grid grid-cols-2 items-center gap-x-3 gap-y-2 text-ink-500 leading-3">
         <span class="inline-flex items-center gap-1">
           <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make
         </span>
         <span class="inline-flex items-center gap-1">
-          <svg width="10" height="10">
-            <line x1="1" y1="1" x2="9" y2="9" stroke="#ef4444" stroke-width="2"/>
-            <line x1="9" y1="1" x2="1" y2="9" stroke="#ef4444" stroke-width="2"/>
-          </svg> Miss
+          <svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#9ca3af"/></svg>2PT
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <svg width="10" height="10"><rect x="1" y="1" width="8" height="8" fill="#9ca3af"/></svg>FT
         </span>
       </span>
+    </div>
+
+    <!-- Period filter -->
+    <div class="flex items-center gap-1">
+      <span class="mr-1 text-[11px] text-ink-500">Show</span>
+      <button
+        v-for="f in PERIOD_FILTERS"
+        :key="f.value"
+        class="rounded px-2 py-0.5 text-[11px] font-semibold transition"
+        :class="periodFilter === f.value ? 'bg-ink-500 text-chalk' : 'bg-ink-800 text-ink-500 hover:text-chalk'"
+        @click="periodFilter = f.value; selectedShotId = null"
+      >{{ f.label }}</button>
     </div>
 
     <!-- Court SVG -->
@@ -332,30 +419,30 @@ function cancelPending() {
           fill="none" stroke="#374151" stroke-width="1" stroke-dasharray="4 3"/>
 
         <!-- Shot markers -->
-        <g v-for="shot in displayShots" :key="shot.id">
-          <template v-if="shot.made">
-            <circle
-              :cx="shot.x * VB_W"
-              :cy="shot.y * VB_H"
-              r="7"
-              fill="#16a34a"
-              fill-opacity="0.85"
-              stroke="white"
-              stroke-width="0.5"
-            />
-          </template>
-          <template v-else>
-            <line
-              :x1="shot.x * VB_W - 6" :y1="shot.y * VB_H - 6"
-              :x2="shot.x * VB_W + 6" :y2="shot.y * VB_H + 6"
-              stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"
-            />
-            <line
-              :x1="shot.x * VB_W + 6" :y1="shot.y * VB_H - 6"
-              :x2="shot.x * VB_W - 6" :y2="shot.y * VB_H + 6"
-              stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"
-            />
-          </template>
+        <g
+          v-for="shot in displayShots"
+          :key="shot.id"
+          class="cursor-pointer"
+          @click.stop="onShotClick(shot)"
+        >
+          <!-- Larger invisible hit target so markers are easy to tap -->
+          <circle :cx="shot.x * VB_W" :cy="shot.y * VB_H" r="13" fill="transparent" />
+          <path
+            :d="shotPath(shot)"
+            :fill="shot.made ? '#16a34a' : 'none'"
+            :fill-opacity="shot.made ? 0.85 : undefined"
+            :stroke="shot.made ? 'white' : '#ef4444'"
+            :stroke-width="shot.made ? 0.5 : 2.5"
+          />
+          <circle
+            v-if="selectedShotId === shot.id"
+            :cx="shot.x * VB_W"
+            :cy="shot.y * VB_H"
+            r="13"
+            fill="none"
+            stroke="#facc15"
+            stroke-width="2"
+          />
         </g>
 
         <!-- Pending shot ring -->
@@ -394,6 +481,31 @@ function cancelPending() {
           <button
             class="rounded px-2 py-1.5 text-xs text-ink-500 hover:text-chalk"
             @click.stop="cancelPending"
+          >✕</button>
+        </div>
+      </div>
+
+      <!-- Delete popup for a tapped shot marker -->
+      <div
+        v-if="selectedShot && selectedShotOffset"
+        class="absolute z-10"
+        :style="{
+          left: `${selectedShotOffset.left}px`,
+          top: `${selectedShotOffset.top}px`,
+          transform: 'translate(-50%, -125%)',
+        }"
+      >
+        <div class="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 p-1.5 shadow-xl">
+          <span class="px-1 text-[11px] font-semibold text-ink-400">
+            {{ selectedShot.period > 4 ? 'OT' : `Q${selectedShot.period}` }} · {{ selectedShot.made ? 'Made' : 'Miss' }}
+          </span>
+          <button
+            class="rounded bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 active:scale-95"
+            @click.stop="deleteSelectedShot"
+          >Delete</button>
+          <button
+            class="rounded px-2 py-1.5 text-xs text-ink-500 hover:text-chalk"
+            @click.stop="selectedShotId = null"
           >✕</button>
         </div>
       </div>

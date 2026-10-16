@@ -24,9 +24,9 @@
 22. - [x] Auto increment player number after dropping marker
 23. - [ ] Record final game score (our score vs. opponent score) on the Game record — currently no way to log the final result
 24. - [ ] Text annotations on play diagrams — allow coach to add a short text label anywhere on the court (e.g. "screen here", "wait for cut")
-25. - [ ] Delete individual shot events from the shot chart (tap a marker to highlight, then delete) — `deleteShot` exists in composable but no UI exposes it
-26. - [ ] Shot chart period filter — filter the displayed shot markers by quarter (currently all shots for the game are overlaid regardless of period)
-27. - [ ] Season stats CSV export — "Export Season CSV" button on the Season tab similar to the per-game export
+25. - [x] Delete individual shot events from the shot chart (tap a marker to highlight, then delete) — `deleteShot` exists in composable but no UI exposes it
+26. - [x] Shot chart period filter — filter the displayed shot markers by quarter (currently all shots for the game are overlaid regardless of period)
+27. - [x] Season stats CSV export — "Export Season CSV" button on the Season tab similar to the per-game export
 28. - [ ] Lineup / on-court tracker — show which 5 players are currently on the floor based on sub events, highlight them in the tracker
 
 ---
@@ -41,8 +41,8 @@
 6. - [x] Saving a play does not disable the Save button during the async call — rapid double-taps can create duplicate records
 7. - [x] `JSON.parse` on the localStorage play-order key in PlaysView has no try/catch — corrupted storage will crash the plays grid with an uncaught SyntaxError
 8. - [x] Shot chart pending-shot overlay (`pendingScreenX/Y`) is computed at click time and not updated if the viewport is resized or device is rotated before the user taps Made/Miss — overlay can end up off-screen
-9. - [ ] Creating a game with an empty opponent string is not blocked — after the `.trim()` check passes an empty string, the row is inserted with `opponent: ""` and shows as a blank entry in the list
-10. - [ ] Play editor: deleting the last phase while `activePhase` is on it doesn't guard the index — `phaseDiagram` getter may reference `phases[undefined]` and render a blank canvas
+9. - [x] Creating a game with an empty opponent string is not blocked — after the `.trim()` check passes an empty string, the row is inserted with `opponent: ""` and shows as a blank entry in the list
+10. - [x] Play editor: deleting the last phase while `activePhase` is on it doesn't guard the index — `phaseDiagram` getter may reference `phases[undefined]` and render a blank canvas
 11. - [ ] Play editor: saving a play with multiple phases only saves the last phase
 12. - [x] Placing a shot on the court away from the center of the court does not render in the correct place
 13. - [x] Print Practice Plan - right now it is only displaying the 1st phase of the drill. Needs to handle showing all phases in a grid
@@ -75,6 +75,6 @@
 9. - [ ] Use icons instead of buttons where it makes sense to conserve space
 10. - [ ] Success toast / snackbar feedback after saving a play, creating a game, or adding a player — currently there is no visual confirmation the action succeeded
 11. - [ ] Stat tap buttons on the tracker are small and easy to miss-tap during a live game — consider larger tap targets or a compact "scoreboard" layout optimized for one-handed use on a phone
-12. - [ ] Shot chart markers should use both color AND shape to distinguish 2pt/3pt/miss (colorblind-friendly) — e.g. circle for made, X for miss already done, but 2pt vs 3pt rely on color alone
+12. - [x] Shot chart markers should use both color AND shape to distinguish 2pt/3pt/miss (colorblind-friendly) — e.g. circle for made, X for miss already done, but 2pt vs 3pt rely on color alone
 
 ---

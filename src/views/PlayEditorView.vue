@@ -132,8 +132,15 @@ function addPhase() {
 function deleteCurrentPhase() {
   if (activePhase.value === 0 || !form.diagram.phases) return
   form.diagram.phases.splice(activePhase.value - 1, 1)
-  activePhase.value = Math.min(activePhase.value, totalPhases.value - 1)
+  // Step back onto the previous phase; clamp in case the deleted one was last.
+  activePhase.value = Math.min(activePhase.value - 1, totalPhases.value - 1)
 }
+
+// Never let the active tab point past the end (e.g. after deleting the last
+// phase or loading a play with fewer phases).
+watch(totalPhases, (n) => {
+  if (activePhase.value > n - 1) activePhase.value = Math.max(0, n - 1)
+})
 
 // ---------- animation preview ----------
 const animating = ref(false)

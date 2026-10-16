@@ -4,7 +4,7 @@ import type { Game, Player, StatEvent, StatType } from '@/types'
 import { useStats } from '@/composables/useStats'
 import { useShotChart } from '@/composables/useShotChart'
 import { useConfirm } from '@/composables/useConfirm'
-import { buildBoxScore, boxScoreToCsv, downloadCsv } from '@/lib/stats-utils'
+import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, seasonStatsToCsv } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
@@ -272,6 +272,11 @@ function exportCsv() {
   downloadCsv(`boxscore-${activeGame.value.opponent}-${activeGame.value.played_on}.csv`, csv)
 }
 
+function exportSeasonCsv() {
+  const csv = seasonStatsToCsv(buildSeasonStats(players.value, allEvents.value))
+  downloadCsv(`season-stats-${new Date().toLocaleDateString('en-CA')}.csv`, csv)
+}
+
 // ----- substitution UI -----
 const subPickerOpen = ref(false)
 
@@ -378,6 +383,15 @@ const seasonStats = computed<SeasonRow[]>(() => {
           @click="mode = 'season'"
         >Season</button>
       </div>
+
+      <button
+        v-if="!activeGame && mode === 'season'"
+        class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-ink-500 py-1.5 text-xs hover:bg-ink-500/90 disabled:opacity-40"
+        title="Export season CSV"
+        :disabled="!allEvents.length"
+        @click="exportSeasonCsv">
+        <FolderArrowDownIcon class="h-5 w-5" />Export
+      </button>
 
       <template v-if="mode === 'game'">
         <button

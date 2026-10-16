@@ -77,6 +77,13 @@ export function useStats() {
   }
 
   async function createGame(g: Omit<Game, 'id' | 'created_at'>): Promise<Game | null> {
+    // Never persist a blank opponent — it renders as an empty card in the games list.
+    const opponent = g.opponent?.trim()
+    if (!opponent) {
+      error.value = 'Opponent name is required.'
+      return null
+    }
+    g = { ...g, opponent }
     const { data, error: err } = await supabase.from('games').insert(g).select().single()
     if (err) {
       error.value = err.message
@@ -172,6 +179,16 @@ export function useStats() {
     return last
   }
 
+  // Delete one specific stat event (e.g. the stat paired with a shot marker
+  // removed from the shot chart).
+  async function deleteStatEvent(id: string): Promise<boolean> {
+    const { error: err } = await supabase.from('stat_events').delete().eq('id', id)
+    if (err) { error.value = err.message; return false }
+    events.value = events.value.filter((e) => e.id !== id)
+    allEvents.value = allEvents.value.filter((e) => e.id !== id)
+    return true
+  }
+
   return {
     players,
     games,
@@ -194,5 +211,6 @@ export function useStats() {
     deleteGame,
     recordStat,
     undoLastFor,
+    deleteStatEvent,
   }
 }
