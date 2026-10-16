@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TrashIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 import type { Play, PlayVideo } from '@/types'
 import { usePlays } from '@/composables/usePlays'
@@ -72,7 +73,9 @@ async function remove(v: PlayVideo) {
         <video v-if="v.url" :src="v.url" controls preload="metadata" class="aspect-video w-full bg-black" />
         <figcaption class="flex items-center justify-between gap-2 p-2 text-sm">
           <span class="truncate">{{ v.title ?? 'Untitled clip' }}</span>
-          <button class="text-xs text-red-400 hover:text-red-300" @click="remove(v)">Remove</button>
+          <button class="shrink-0 text-red-400 hover:text-red-300" title="Remove clip" aria-label="Remove clip" @click="remove(v)">
+            <TrashIcon class="h-5 w-5" />
+          </button>
         </figcaption>
       </figure>
     </div>

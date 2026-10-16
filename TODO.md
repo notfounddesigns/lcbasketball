@@ -72,9 +72,9 @@
 6. - [x] Replace dark `ink-900` background with true black (`#000`) to match iOS dark mode aesthetic on OLED screens
 7. - [x] Add a bottom tab bar navigation (Plays / Stats) in place of the current top nav — standard iOS navigation pattern on mobile
 8. - [x] Add LC logo to court
-9. - [ ] Use icons instead of buttons where it makes sense to conserve space
+9. - [x] Use icons instead of buttons where it makes sense to conserve space
 10. - [x] Success toast / snackbar feedback after saving a play, creating a game, or adding a player — currently there is no visual confirmation the action succeeded
-11. - [ ] Stat tap buttons on the tracker are small and easy to miss-tap during a live game — consider larger tap targets or a compact "scoreboard" layout optimized for one-handed use on a phone
+11. - [x] Stat tap buttons on the tracker are small and easy to miss-tap during a live game — consider larger tap targets or a compact "scoreboard" layout optimized for one-handed use on a phone
 12. - [x] Shot chart markers should use both color AND shape to distinguish 2pt/3pt/miss (colorblind-friendly) — e.g. circle for made, X for miss already done, but 2pt vs 3pt rely on color alone
 
 ---

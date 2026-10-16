@@ -7,7 +7,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { CATEGORY_LABELS, PLAY_CATEGORIES, resolveCategory, type PlayCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import PlayAnimator from '@/components/PlayAnimator.vue'
-import { ChevronLeftIcon, PencilIcon, DocumentDuplicateIcon, PlayIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ChevronLeftIcon, PencilIcon, DocumentDuplicateIcon, PlayIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +88,11 @@ const selectedLabel = computed(() =>
 const showCategoryGrid = computed(
   () => activeTab.value === 'playbook' && !selectedCategory.value && !search.value.trim(),
 )
+
+// Scouting reports are plays flagged is_scouting; the editor pre-ticks the flag.
+function newScoutingReport() {
+  router.push({ path: '/plays/new', query: { scouting: '1' } })
+}
 
 function newPlay() {
   const cat = selectedCategory.value
@@ -182,8 +187,12 @@ function onDragEnd() {
         <h1 v-if="activeTab === 'playbook'" class="font-stencil text-2xl font-extrabold tracking-tight">Playbook</h1>
         <h1 v-else class="font-stencil text-2xl font-extrabold tracking-tight">Scouting Reports</h1>
       </div>
-      <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" @click="newPlay">+ New Play</button>
-      <button v-else class="btn-primary capitalize" @click="router.push('/scout/new')">+ Scouting Report</button>
+      <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" title="New play" aria-label="New play" @click="newPlay">
+        <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Play</span>
+      </button>
+      <button v-else class="btn-primary capitalize" title="New scouting report" aria-label="New scouting report" @click="newScoutingReport">
+        <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">Scouting Report</span>
+      </button>
     </header>
 
     <!-- Playbook / Scouting -->
@@ -254,7 +263,7 @@ function onDragEnd() {
     <template v-else-if="!loading">
       <div v-if="activeTab === 'scouting' && !tabPlays.length" class="card p-10 text-center">
         <p class="mb-3 text-ink-500">No scouting reports yet.</p>
-        <button class="btn-primary" @click="router.push('/plays/new')">Add scouting report</button>
+        <button class="btn-primary" @click="newScoutingReport">Add scouting report</button>
       </div>
 
       <div v-else-if="!search && selectedCategory && !filteredPlays.length" class="card p-10 text-center">
