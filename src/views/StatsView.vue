@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { Game, Player, StatEvent, StatType } from '@/types'
 import { useStats } from '@/composables/useStats'
 import { useShotChart } from '@/composables/useShotChart'
@@ -7,6 +8,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, formatPct, periodLabel, seasonStatsToCsv, teamTotals } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
+import PlaysView from '@/views/PlaysView.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
 import { ArchiveBoxIcon, ArrowLeftIcon, ArrowsRightLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
@@ -23,16 +25,32 @@ const { shots, deleteShot } = useShotChart()
 const { confirm } = useConfirm()
 const { toast } = useToast()
 
-// Shooting stats are recorded alongside a shot_event on the shot chart, so
-// undoing one must also remove its paired shot marker.
+// Field goals are recorded alongside a shot_event on the shot chart, so
+// undoing one must also remove its paired shot marker. Free throws have their
+// own buttons and no marker, so they're not in this set.
 const SHOOTING_STATS = new Set<StatType>([
-  'fg_made', 'fg_miss', 'three_made', 'three_miss', 'ft_made', 'ft_miss',
+  'fg_made', 'fg_miss', 'three_made', 'three_miss',
 ])
 
-// ---- Mode: "game" | "season" ----
-const mode = ref<'game' | 'season'>('game')
+// ---- Mode: game | season | scouting ----
+const route = useRoute()
+const router = useRouter()
+type Mode = 'game' | 'season' | 'scouting'
+// In the URL (?mode=) so the play editor's Back returns to the Scouting tab.
+const mode = computed<Mode>({
+  get: () => {
+    const m = route.query.mode
+    return m === 'season' || m === 'scouting' ? m : 'game'
+  },
+  set: (m) => {
+    router.replace({ query: m === 'game' ? {} : { mode: m } })
+  },
+})
 
 const activeGame = ref<Game | null>(null)
+// The game tracker (and its header controls) only shows on the Game tab; a
+// game left open stays open underneath Season/Scouting.
+const inGame = computed(() => mode.value === 'game' && !!activeGame.value)
 
 // ---- Period tracking ----
 const activePeriod = ref(1)
@@ -191,7 +209,13 @@ async function onDeleteGame(g: Game) {
   if (activeGame.value?.id === g.id) activeGame.value = null
 }
 
-// ----- non-shooting stat buttons (shooting handled by shot chart) -----
+// ----- free throws: one tap each, no court position needed -----
+const FT_STATS: { stat: StatType; label: string; tone: string }[] = [
+  { stat: 'ft_made', label: 'FT Make', tone: 'bg-green-700/30 text-green-300 ring-1 ring-green-500/40' },
+  { stat: 'ft_miss', label: 'FT Miss', tone: 'bg-red-900/40 text-red-300 ring-1 ring-red-500/40' },
+]
+
+// ----- non-shooting stat buttons (field goals handled by shot chart) -----
 const ACTION_STATS: { stat: StatType; label: string; tone: string }[] = [
   { stat: 'rebound_def', label: 'DREB', tone: 'bg-ink-700 text-chalk' },
   { stat: 'rebound_off', label: 'OREB', tone: 'bg-ink-700 text-chalk' },
@@ -431,30 +455,30 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
     <!-- Sticky page header -->
     <div
       class="sticky top-0 z-10 -mx-4 flex items-center gap-3 bg-ink-900/95 px-4 pt-6 pb-1 backdrop-blur-xl">
-      <h1 v-if="!activeGame" class="font-stencil text-xl font-bold capitalize leading-tight">Stats</h1>
+      <h1 v-if="!inGame" class="font-stencil text-xl font-bold capitalize leading-tight">Stats</h1>
       <button
-        v-if="activeGame"
+        v-if="inGame"
         class="inline-flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-xs" @click="activeGame = null">
         <ArrowLeftIcon class="h-5 w-5 text-chalk" />
         <span class="text-chalk text-[clamp(0.875rem,2vw,1.15rem)] font-stencil uppercase font-bold">Games</span>
       </button>
       <span class="grow"></span>
       <button
-        v-if="activeGame && selectedPlayer && selectedHasEvents"
+        v-if="inGame && selectedPlayer && selectedHasEvents"
         class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-away py-1 text-xs hover:bg-away/90"
         title="Undo last stat"
         @click="onUndo(selectedPlayerId!)">
         <ArrowUturnLeftIcon class="h-5 w-5" />Undo
       </button>
       <button
-        v-if="activeGame"
+        v-if="inGame"
         class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-ink-500 py-1 text-xs hover:bg-ink-500/90"
         title="Export CSV"
         @click="exportCsv">
         <FolderArrowDownIcon class="h-5 w-5" />Export
       </button>
       <!-- Mode tabs -->
-      <div v-if="!activeGame" class="flex gap-1 ml-auto rounded-lg bg-ink-800 p-0.5">
+      <div v-if="!inGame" class="flex gap-1 ml-auto rounded-lg bg-ink-800 p-0.5">
         <button
           class="rounded-md px-3 py-1 text-xs font-semibold transition"
           :class="mode === 'game' ? 'bg-rim text-white' : 'text-ink-500 hover:text-chalk'"
@@ -465,10 +489,15 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
           :class="mode === 'season' ? 'bg-rim text-white' : 'text-ink-500 hover:text-chalk'"
           @click="mode = 'season'"
         >Season</button>
+        <button
+          class="rounded-md px-3 py-1 text-xs font-semibold transition"
+          :class="mode === 'scouting' ? 'bg-rim text-white' : 'text-ink-500 hover:text-chalk'"
+          @click="mode = 'scouting'"
+        >Scouting</button>
       </div>
 
       <button
-        v-if="!activeGame && mode === 'season'"
+        v-if="mode === 'season'"
         class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-ink-500 py-1.5 text-xs hover:bg-ink-500/90 disabled:opacity-40"
         title="Export season CSV"
         :disabled="!allEvents.length"
@@ -659,6 +688,17 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
               </div>
             </div>
 
+            <!-- Free throws -->
+            <button
+              v-for="b in FT_STATS"
+              :key="b.stat"
+              class="min-h-[48px] rounded-lg text-sm font-bold transition"
+              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
+              :disabled="!selectedPlayerId"
+              @click="tap(b.stat)"
+            >{{ b.label }}</button>
+            <div class="my-0.5 border-t border-ink-700" />
+
             <!-- Non-shooting action buttons -->
             <button
               v-for="b in ACTION_STATS"
@@ -763,7 +803,7 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         </div>
 
         <!-- Room so the fixed stat pad never covers the last of the content -->
-        <div class="h-40 md:hidden" aria-hidden="true" />
+        <div class="h-56 md:hidden" aria-hidden="true" />
 
         <!-- Phone stat pad: big thumb-reachable buttons pinned above the tab bar -->
         <div
@@ -793,6 +833,14 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
           </div>
           <div class="grid grid-cols-4 gap-2">
             <button
+              v-for="b in FT_STATS"
+              :key="b.stat"
+              class="col-span-2 min-h-[52px] rounded-xl text-sm font-bold transition"
+              :class="[b.tone, selectedPlayerId ? 'active:scale-95 active:brightness-125' : 'opacity-30']"
+              :disabled="!selectedPlayerId"
+              @click="tap(b.stat)"
+            >{{ b.label }}</button>
+            <button
               v-for="b in ACTION_STATS"
               :key="b.stat"
               class="min-h-[52px] rounded-xl text-sm font-bold transition"
@@ -804,6 +852,9 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         </div>
       </template>
     </template>
+
+    <!-- ==================== SCOUTING ==================== -->
+    <PlaysView v-else-if="mode === 'scouting'" scouting />
 
     <!-- ==================== SEASON MODE ==================== -->
     <template v-else>
