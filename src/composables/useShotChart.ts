@@ -5,14 +5,20 @@ import type { ShotEvent } from '@/types'
 const shots = ref<ShotEvent[]>([])
 const error = ref<string | null>(null)
 
+// Bumped per fetch so a late response for a previous game is dropped.
+let shotsReq = 0
+
 export function useShotChart() {
   async function fetchShots(gameId: string) {
+    const req = ++shotsReq
+    shots.value = []
     if (!isSupabaseConfigured) return
     const { data, error: e } = await supabase
       .from('shot_events')
       .select('*')
       .eq('game_id', gameId)
       .order('created_at', { ascending: true })
+    if (req !== shotsReq) return
     if (e) error.value = e.message
     else shots.value = (data ?? []) as ShotEvent[]
   }

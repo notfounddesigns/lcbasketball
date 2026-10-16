@@ -111,3 +111,26 @@ export function downloadCsv(filename: string, csv: string) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/** Display label for a period number: 1–4 → Q1–Q4, 5 → OT, 6 → OT2, … */
+export function periodLabel(period: number): string {
+  if (period <= 4) return `Q${period}`
+  return period === 5 ? 'OT' : `OT${period - 4}`
+}
+
+/** Sum a set of box-score rows into a single team line. */
+export function teamTotals(rows: BoxScoreRow[]): BoxScoreRow {
+  const total: BoxScoreRow = {
+    player_id: 'team', name: 'Team', number: null,
+    pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0,
+    oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
+  }
+  const keys = ['pts', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'oreb', 'dreb', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf'] as const
+  for (const r of rows) for (const k of keys) total[k] += r[k]
+  return total
+}
+
+/** Percentage to one decimal, or '—' when there were no attempts. */
+export function formatPct(made: number, attempts: number): string {
+  return attempts ? `${Math.round((made / attempts) * 1000) / 10}%` : '—'
+}

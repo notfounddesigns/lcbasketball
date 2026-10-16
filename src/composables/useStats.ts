@@ -40,13 +40,21 @@ export function useStats() {
     else games.value = (data ?? []) as Game[]
   }
 
+  // Each game switch bumps these, so a slow response for the game the coach
+  // just left can't overwrite (or be added to) the one they opened.
+  let eventsReq = 0
+  let subsReq = 0
+
   async function fetchEvents(gameId: string) {
+    const req = ++eventsReq
+    events.value = []
     loading.value = true
     const { data, error: err } = await supabase
       .from('stat_events')
       .select('*')
       .eq('game_id', gameId)
       .order('created_at', { ascending: true })
+    if (req !== eventsReq) return
     if (err) error.value = err.message
     else events.value = (data ?? []) as StatEvent[]
     loading.value = false
@@ -98,6 +106,7 @@ export function useStats() {
     const { error: err } = await supabase.from('games').delete().eq('id', id)
     if (err) { error.value = err.message; return false }
     games.value = games.value.filter((g) => g.id !== id)
+    allEvents.value = allEvents.value.filter((e) => e.game_id !== id)
     return true
   }
 
@@ -142,16 +151,20 @@ export function useStats() {
       return null
     }
     events.value = [...events.value, data as StatEvent]
+    allEvents.value = [...allEvents.value, data as StatEvent]
     return data as StatEvent
   }
 
   async function fetchSubEvents(gameId: string) {
+    const req = ++subsReq
+    subEvents.value = []
     if (!isSupabaseConfigured) return
     const { data, error: err } = await supabase
       .from('sub_events')
       .select('*')
       .eq('game_id', gameId)
       .order('created_at', { ascending: true })
+    if (req !== subsReq) return
     if (err) error.value = err.message
     else subEvents.value = (data ?? []) as SubEvent[]
   }
@@ -172,6 +185,13 @@ export function useStats() {
     return true
   }
 
+  async function deleteSub(id: string): Promise<boolean> {
+    const { error: err } = await supabase.from('sub_events').delete().eq('id', id)
+    if (err) { error.value = err.message; return false }
+    subEvents.value = subEvents.value.filter((s) => s.id !== id)
+    return true
+  }
+
   // Returns the deleted event so callers can undo paired records (e.g. the
   // shot_event that a shooting stat was recorded alongside).
   async function undoLastFor(playerId: string): Promise<StatEvent | null> {
@@ -184,6 +204,7 @@ export function useStats() {
       return null
     }
     events.value = events.value.filter((e) => e.id !== last.id)
+    allEvents.value = allEvents.value.filter((e) => e.id !== last.id)
     return last
   }
 
@@ -211,6 +232,7 @@ export function useStats() {
     fetchAllEvents,
     fetchSubEvents,
     recordSub,
+    deleteSub,
     addPlayer,
     updatePlayer,
     createGame,

@@ -4,6 +4,7 @@ import { useShotChart } from '@/composables/useShotChart'
 import { useStats } from '@/composables/useStats'
 import type { StatType, ShotEvent } from '@/types'
 import { TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { periodLabel } from '@/lib/stats-utils'
 
 const props = defineProps<{
   gameId: string
@@ -39,14 +40,14 @@ const selectedShotId = ref<string | null>(null)
 const selectedShot = computed(() => shots.value.find((s) => s.id === selectedShotId.value) ?? null)
 
 // Which period's shots are overlaid on the chart
-const PERIOD_FILTERS: { label: string; value: number | 'all' }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Q1', value: 1 },
-  { label: 'Q2', value: 2 },
-  { label: 'Q3', value: 3 },
-  { label: 'Q4', value: 4 },
-  { label: 'OT', value: 5 },
-]
+// Q1–Q4 and OT always; extra overtimes appear once shots exist in them.
+const PERIOD_FILTERS = computed<{ label: string; value: number | 'all' }[]>(() => {
+  const last = Math.max(5, props.period, ...shots.value.map((s) => s.period))
+  return [
+    { label: 'All', value: 'all' },
+    ...Array.from({ length: last }, (_, i) => ({ label: periodLabel(i + 1), value: i + 1 })),
+  ]
+})
 const periodFilter = ref<number | 'all'>('all')
 
 watch(() => props.gameId, (id) => {
@@ -518,7 +519,7 @@ function shotPath(shot: ShotEvent): string {
       >
         <div class="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 p-1.5 shadow-xl">
           <span class="px-1 text-[11px] font-semibold text-ink-400">
-            {{ selectedShot.period > 4 ? 'OT' : `Q${selectedShot.period}` }} · {{ selectedShot.made ? 'Made' : 'Miss' }}
+            {{ periodLabel(selectedShot.period) }} · {{ selectedShot.made ? 'Made' : 'Miss' }}
           </span>
           <button
             class="rounded bg-red-800 p-1.5 text-white hover:bg-red-700 active:scale-95"

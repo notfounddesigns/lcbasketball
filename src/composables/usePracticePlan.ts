@@ -78,13 +78,17 @@ export function usePracticePlan() {
 
   // Returns the ids of the inserted rows, or null on failure.
   async function insertBlocks(planId: string, blocks: TimeBlockDraft[]): Promise<string[] | null> {
+    // Save exactly what the editor's timeline shows: a block counts if it has
+    // any content or any time (an untitled 10-minute block still shifts every
+    // later block), and a blank/0 duration stays 0 rather than becoming 1.
+    const minutes = (b: TimeBlockDraft) => Math.max(0, Math.round(Number(b.duration_min)) || 0)
     const rows = blocks
-      .filter((b) => b.label.trim() || b.play_id || b.notes.trim())
+      .filter((b) => b.label.trim() || b.play_id || b.notes.trim() || minutes(b) > 0)
       .map((b, i) => ({
         plan_id: planId,
         play_id: b.play_id,
         label: b.label.trim() || null,
-        duration_min: Math.max(1, Math.round(b.duration_min) || 1),
+        duration_min: minutes(b),
         sort_order: i,
         notes: b.notes.trim() || null,
       }))

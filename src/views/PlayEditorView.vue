@@ -74,6 +74,20 @@ function onHeaderButtonClick() {
   }
 }
 
+// Return to the list the coach came from (with its ?category= / ?tab=); on a
+// direct visit, open the tab and category this play belongs to.
+function goBack() {
+  if (window.history.state?.back) {
+    router.back()
+    return
+  }
+  const category = resolveCategory(form.category)
+  router.push({
+    path: '/plays',
+    query: form.is_scouting ? { tab: 'scouting' } : category ? { category } : {},
+  })
+}
+
 // ---------- phase management ----------
 const activePhase = ref(0) // 0-indexed; 0 = phase 1
 
@@ -210,7 +224,7 @@ async function save() {
     <div
       class="sticky top-0 z-10 -mx-4 -mt-6 flex items-center gap-3 border-b border-ink-700/60 bg-ink-900/95 px-4 py-3 backdrop-blur-xl"
     >
-      <button class="btn-ghost py-1.5 text-sm" @click="router.push('/plays')">
+      <button class="btn-ghost py-1.5 text-sm" title="Back" aria-label="Back" @click="goBack">
         <BackspaceIcon class="h-5 w-5" />
       </button>
       <h1 class="font-stencil grow text-lg font-bold capitalize leading-tight">

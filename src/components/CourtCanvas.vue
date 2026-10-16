@@ -623,6 +623,17 @@ function onPointerUp() {
   else onDrawUp()
 }
 
+// The system can cancel a touch mid-gesture (an incoming call, a palm, the
+// iPad edge swipe). Drop whatever was in progress rather than committing a
+// half-drawn stroke or leaving a drag stuck to the next touch.
+function onPointerCancel() {
+  drawing.value = null
+  dragKind.value = null
+  dragLive.value = null
+  erasing.value = false
+  eraserPos.value = null
+}
+
 // Hide the eraser ring when the pointer leaves the canvas
 function onPointerLeave() {
   eraserPos.value = null
@@ -990,6 +1001,7 @@ defineExpose({ exportPng })
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
         @pointerleave="onPointerLeave"
+        @pointercancel="onPointerCancel"
       >
         <!-- court markings -->
         <g fill="none" stroke="#1c1614" stroke-width="2" opacity="0.85">

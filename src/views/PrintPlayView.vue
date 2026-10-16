@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { Diagram } from '@/types'
 import { usePlays } from '@/composables/usePlays'
 import { diagramPhases } from '@/lib/diagram-utils'
 import CourtCanvas from '@/components/CourtCanvas.vue'
+import PrintToolbar from '@/components/PrintToolbar.vue'
 
 const route = useRoute()
 const { plays, fetchPlays } = usePlays()
@@ -15,19 +16,30 @@ const allPhases = computed<Diagram[]>(() => (play.value ? diagramPhases(play.val
 
 const ready = ref(false)
 
+let printTimer: ReturnType<typeof setTimeout> | undefined
+
 onMounted(async () => {
   if (!plays.value.length) await fetchPlays()
   ready.value = true
+  // Nothing to print for a missing play — show "not found" instead of
+  // sending the loading screen to the printer.
+  if (!play.value) return
   // Wait for Teleport + CourtCanvas to mount into <body> before printing
   await nextTick()
-  setTimeout(() => window.print(), 400)
+  printTimer = setTimeout(() => window.print(), 400)
 })
+
+onBeforeUnmount(() => clearTimeout(printTimer))
 </script>
 
 <template>
   <!-- Loading indicator stays in the normal router slot -->
-  <div v-if="!ready || !play" class="flex h-screen items-center justify-center text-ink-500">
+  <div v-if="!ready" class="flex h-screen items-center justify-center text-ink-500">
     Loading…
+  </div>
+  <div v-else-if="!play" class="flex h-screen flex-col items-center justify-center gap-3 text-ink-500">
+    <p>This play couldn't be found.</p>
+    <RouterLink to="/plays" class="btn-ghost text-sm">Back</RouterLink>
   </div>
 
   <!-- Teleport to <body> so the print CSS selector works:
@@ -35,6 +47,7 @@ onMounted(async () => {
        while this sibling .print-sheet remains visible. -->
   <Teleport v-else to="body">
     <div class="print-sheet bg-white text-black">
+      <PrintToolbar back-to="/plays" />
       <!-- Each phase gets its own page -->
       <div
         v-for="(phase, idx) in allPhases"
