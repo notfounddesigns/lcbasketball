@@ -226,18 +226,35 @@ function onCourtClick(e: MouseEvent) {
   pendingShot.value = svgToNorm(svgX, svgY)
 }
 
+// True while a shot is being saved — a double tap (or Made then Miss) must not
+// record the same shot twice.
+const recordingShot = ref(false)
+
 async function confirmShot(made: boolean) {
-  if (!pendingShot.value || !props.playerId || !props.gameId) {
+  if (recordingShot.value) return
+  const shot = pendingShot.value
+  if (!shot || !props.playerId || !props.gameId) {
     pendingShot.value = null
     return
   }
 
-  const stat = statFor(getShotType(pendingShot.value.x, pendingShot.value.y), made)
+  // Snapshot everything now: the coach may pick another player or quarter
+  // while the inserts are in flight.
+  const gameId = props.gameId
+  const playerId = props.playerId
+  const period = props.period
+  const stat = statFor(getShotType(shot.x, shot.y), made)
 
-  await recordShot(props.gameId, props.playerId, pendingShot.value.x, pendingShot.value.y, made, props.period)
-  await recordStat(props.gameId, props.playerId, stat, props.period)
-
+  recordingShot.value = true
   pendingShot.value = null
+  try {
+    const saved = await recordShot(gameId, playerId, shot.x, shot.y, made, period)
+    if (!saved) return
+    // Keep marker and box score in step: drop the marker if its stat fails.
+    if (!(await recordStat(gameId, playerId, stat, period))) await deleteShot(saved.id)
+  } finally {
+    recordingShot.value = false
+  }
 }
 
 function cancelPending() {
@@ -472,11 +489,13 @@ function shotPath(shot: ShotEvent): string {
         <div class="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 p-1.5 shadow-xl">
           <span class="px-1 text-[11px] font-semibold text-ink-400">{{ shotTypeLabel }}</span>
           <button
-            class="rounded bg-green-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-600 active:scale-95"
+            class="rounded bg-green-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-600 active:scale-95 disabled:opacity-50"
+            :disabled="recordingShot"
             @click.stop="confirmShot(true)"
           >Made</button>
           <button
-            class="rounded bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 active:scale-95"
+            class="rounded bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 active:scale-95 disabled:opacity-50"
+            :disabled="recordingShot"
             @click.stop="confirmShot(false)"
           >Miss</button>
           <button

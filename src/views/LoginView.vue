@@ -1,54 +1,32 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 const route = useRoute()
 const router = useRouter()
-const { signIn, signUp } = useAuth()
-
-type Mode = 'signin' | 'signup'
-const mode = ref<Mode>('signin')
+const { signIn, signOut, checkStaff } = useAuth()
 
 const email = ref('')
 const password = ref('')
-const confirmPassword = ref('')
 
 const busy = ref(false)
 const error = ref<string | null>(null)
-const notice = ref<string | null>(null)
-
-const isSignUp = computed(() => mode.value === 'signup')
-
-// Supabase rejects anything under 6 by default; 8 is the cheapest upgrade over
-// a password protecting a whole team's roster.
-const MIN_PASSWORD = 8
-
-function switchMode(next: Mode) {
-  mode.value = next
-  error.value = null
-  notice.value = null
-  confirmPassword.value = ''
-}
 
 // Clear a stale failure as soon as the user starts fixing it.
-watch([email, password, confirmPassword], () => {
+watch([email, password], () => {
   error.value = null
 })
 
 function validate(): string | null {
   if (!email.value.trim()) return 'Enter your email address.'
   if (!password.value) return 'Enter your password.'
-  if (isSignUp.value) {
-    if (password.value.length < MIN_PASSWORD) {
-      return `Password must be at least ${MIN_PASSWORD} characters.`
-    }
-    if (password.value !== confirmPassword.value) return 'Passwords do not match.'
-  }
   return null
 }
 
+// Accounts are created by the head coach (see the staff migration in
+// supabase/schema.sql), so there's no self-service sign-up here.
 async function submit() {
   if (busy.value) return
 
@@ -60,25 +38,24 @@ async function submit() {
 
   busy.value = true
   error.value = null
-  notice.value = null
 
-  const result = isSignUp.value
-    ? await signUp(email.value, password.value)
-    : await signIn(email.value, password.value)
-
-  busy.value = false
-
+  const result = await signIn(email.value, password.value)
   if (result.error) {
+    busy.value = false
     error.value = result.error
     return
   }
 
-  if (result.needsConfirmation) {
-    notice.value = `Check ${email.value.trim()} for a confirmation link, then sign in.`
-    switchMode('signin')
-    password.value = ''
+  // A valid login that isn't on the staff list would see an empty app (RLS
+  // returns no rows), so say why and sign straight back out.
+  if (!(await checkStaff())) {
+    await signOut()
+    busy.value = false
+    error.value = "This account isn't on the coaching staff list. Ask the head coach to add you."
     return
   }
+
+  busy.value = false
 
   // The guard stashes where the user was headed before it bounced them here.
   // Only in-app paths are honoured — '//host' and absolute URLs are dropped so
@@ -124,53 +101,28 @@ async function submit() {
           />
         </div>
 
-        <div :class="isSignUp ? 'mb-4' : 'mb-5'">
+        <div class="mb-5">
           <label class="label" for="password">Password</label>
           <input
             id="password"
             v-model="password"
             class="input"
             type="password"
-            :autocomplete="isSignUp ? 'new-password' : 'current-password'"
-            placeholder="••••••••"
-            :disabled="busy"
-          />
-        </div>
-
-        <div v-if="isSignUp" class="mb-5">
-          <label class="label" for="confirm-password">Confirm password</label>
-          <input
-            id="confirm-password"
-            v-model="confirmPassword"
-            class="input"
-            type="password"
-            autocomplete="new-password"
+            autocomplete="current-password"
             placeholder="••••••••"
             :disabled="busy"
           />
         </div>
 
         <p v-if="error" class="mb-4 text-sm text-red-400" role="alert">{{ error }}</p>
-        <p v-else-if="notice" class="mb-4 text-sm text-home" role="status">{{ notice }}</p>
 
         <button class="btn-primary w-full" type="submit" :disabled="busy">
-          {{ busy ? 'Working…' : isSignUp ? 'Create account' : 'Sign in' }}
+          {{ busy ? 'Signing in…' : 'Sign in' }}
         </button>
       </form>
 
       <p class="mt-5 text-center text-sm text-ink-500">
-        <template v-if="isSignUp">
-          Already have an account?
-          <button class="font-semibold text-rim hover:brightness-110" @click="switchMode('signin')">
-            Sign in
-          </button>
-        </template>
-        <template v-else>
-          Need an account?
-          <button class="font-semibold text-rim hover:brightness-110" @click="switchMode('signup')">
-            Sign up
-          </button>
-        </template>
+        Need an account? Ask the head coach to add you.
       </p>
     </div>
   </div>

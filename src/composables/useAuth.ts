@@ -10,8 +10,6 @@ const isAuthenticated = computed(() => Boolean(session.value))
 
 export interface AuthResult {
   error: string | null
-  /** Sign-up succeeded but Supabase is holding the account for email confirmation. */
-  needsConfirmation?: boolean
 }
 
 let initPromise: Promise<void> | null = null
@@ -44,20 +42,20 @@ export function useAuth() {
       password,
     })
     if (error && isAuthRetryableFetchError(error)) {
+      return { error: "Can't reach the server — check your connection and try again." }
     }
     return { error: error?.message ?? null }
   }
 
-  async function signUp(email: string, password: string): Promise<AuthResult> {
-    if (!isSupabaseConfigured) return { error: 'Supabase not configured — see README.' }
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    })
-    if (error) return { error: error.message }
-    // With "Confirm email" on (the Supabase default) sign-up returns a user but
-    // no session — the account is unusable until the emailed link is clicked.
-    return { error: null, needsConfirmation: !data.session }
+  /**
+   * Whether the signed-in account is on the staff allow-list. If the check
+   * itself can't run (e.g. the staff migration hasn't been applied yet) this
+   * returns true: the database policies remain the real gate either way.
+   */
+  async function checkStaff(): Promise<boolean> {
+    const { data, error } = await supabase.rpc('is_staff')
+    if (error) return true
+    return data === true
   }
 
   async function signOut(): Promise<AuthResult> {
@@ -82,5 +80,5 @@ export function useAuth() {
     return { error: null }
   }
 
-  return { session, user, isAuthenticated, signIn, signUp, signOut }
+  return { session, user, isAuthenticated, signIn, signOut, checkStaff }
 }

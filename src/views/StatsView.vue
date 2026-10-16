@@ -9,13 +9,13 @@ import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, seasonStat
 import ShotChart from '@/components/ShotChart.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
-import { ArrowLeftIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { ArchiveBoxIcon, ArrowLeftIcon, ArrowsRightLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const {
   players, games, events, allEvents, subEvents, error,
   fetchPlayers, fetchGames, fetchEvents, fetchAllEvents,
   fetchSubEvents, recordSub,
-  addPlayer, updatePlayer, deletePlayer,
+  addPlayer, updatePlayer,
   createGame, updateGame, deleteGame,
   recordStat, undoLastFor,
 } = useStats()
@@ -89,15 +89,30 @@ async function saveEditPlayer(id: string) {
   editingPlayerId.value = null
 }
 
-async function onDeletePlayer(id: string) {
+// Players are retired, never deleted: deleting the row would cascade away
+// every stat, shot and sub they ever recorded.
+async function onRetirePlayer(p: Player) {
   const ok = await confirm({
-    title: 'Remove player',
-    message: 'Remove this player? Their recorded stats will remain.',
-    confirmText: 'Remove',
-    tone: 'danger',
+    title: 'Retire player',
+    message: `Retire ${p.name}? They'll be hidden from the roster and new games. Their stats stay in past box scores and season totals, and you can reactivate them any time.`,
+    confirmText: 'Retire',
   })
   if (!ok) return
-  await deletePlayer(id)
+  if (await updatePlayer(p.id, { active: false })) toast(`${p.name} retired`)
+}
+
+async function onReactivatePlayer(p: Player) {
+  if (await updatePlayer(p.id, { active: true })) toast(`${p.name} is back on the roster`)
+}
+
+const activePlayers = computed(() => players.value.filter((p) => p.active !== false))
+const retiredPlayers = computed(() => players.value.filter((p) => p.active === false))
+
+// Box scores list the current roster plus any retired player who has stats in
+// the events being summarised, so history never loses a name.
+function rosterFor(evts: StatEvent[]): Player[] {
+  const withStats = new Set(evts.map((e) => e.player_id))
+  return players.value.filter((p) => p.active !== false || withStats.has(p.id))
 }
 
 // ----- new game sheet -----
@@ -173,7 +188,7 @@ async function onUndo(playerId: string) {
   if (lastShot) await deleteShot(lastShot.id)
 }
 
-const boxScore = computed(() => buildBoxScore(players.value, events.value))
+const boxScore = computed(() => buildBoxScore(rosterFor(events.value), events.value))
 
 const selectedHasEvents = computed(() =>
   !!selectedPlayerId.value && events.value.some((e) => e.player_id === selectedPlayerId.value),
@@ -287,7 +302,7 @@ function exportCsv() {
 }
 
 function exportSeasonCsv() {
-  const csv = seasonStatsToCsv(buildSeasonStats(players.value, allEvents.value))
+  const csv = seasonStatsToCsv(buildSeasonStats(rosterFor(allEvents.value), allEvents.value))
   downloadCsv(`season-stats-${new Date().toLocaleDateString('en-CA')}.csv`, csv)
 }
 
@@ -364,7 +379,7 @@ async function doSub(playerIdOut: string) {
 }
 
 // ----- season stats -----
-const seasonBoxScore = computed(() => buildBoxScore(players.value, allEvents.value))
+const seasonBoxScore = computed(() => buildBoxScore(rosterFor(allEvents.value), allEvents.value))
 
 interface SeasonRow {
   player_id: string
@@ -585,7 +600,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
           </p>
           <div class="flex flex-wrap gap-1.5">
             <button
-              v-for="other in [...onCourtPlayers, ...players.filter(op => !onCourtIds.has(op.id))].filter(op => op.id !== selectedPlayerId)"
+              v-for="other in [...onCourtPlayers, ...activePlayers.filter(op => !onCourtIds.has(op.id))].filter(op => op.id !== selectedPlayerId)"
               :key="other.id"
               class="rounded-lg px-3 py-1.5 text-xs text-chalk hover:bg-rim hover:text-white"
               :class="onCourtIds.has(other.id) ? 'bg-ink-600 ring-1 ring-green-500/60' : 'bg-ink-700'"
@@ -897,7 +912,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
         </div>
 
         <ul class="mb-4 space-y-1 text-sm">
-          <li v-for="p in players" :key="p.id">
+          <li v-for="p in activePlayers" :key="p.id">
             <template v-if="editingPlayerId === p.id">
               <div class="flex gap-1">
                 <input
@@ -926,13 +941,34 @@ const seasonStats = computed<SeasonRow[]>(() => {
                 <button class="text-[10px] text-ink-500 hover:text-chalk" @click="startEditPlayer(p)">
                   <PencilIcon class="h-5 w-5" />
                 </button>
-                <button class="text-[10px] text-red-400 hover:text-red-300" @click="onDeletePlayer(p.id)">
-                  <TrashIcon class="h-5 w-5" />
+                <button
+                  class="text-[10px] text-ink-500 hover:text-chalk"
+                  title="Retire player" aria-label="Retire player"
+                  @click="onRetirePlayer(p)"
+                >
+                  <ArchiveBoxIcon class="h-5 w-5" />
                 </button>
               </div>
             </template>
           </li>
         </ul>
+
+        <details v-if="retiredPlayers.length" class="mb-4 text-sm">
+          <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-ink-500">
+            Retired ({{ retiredPlayers.length }})
+          </summary>
+          <ul class="mt-2 space-y-1">
+            <li v-for="p in retiredPlayers" :key="p.id" class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-ink-500">
+              <span class="w-7 shrink-0 text-right font-mono">{{ p.number ?? '—' }}</span>
+              <span class="grow">{{ p.name }}</span>
+              <button
+                class="hover:text-chalk"
+                title="Reactivate player" aria-label="Reactivate player"
+                @click="onReactivatePlayer(p)"
+              ><ArrowUturnUpIcon class="h-5 w-5" /></button>
+            </li>
+          </ul>
+        </details>
 
         <div class="border-t border-ink-700 pt-4">
           <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Add player</p>
