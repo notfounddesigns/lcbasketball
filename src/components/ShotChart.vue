@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useShotChart } from '@/composables/useShotChart'
 import { useStats } from '@/composables/useStats'
 import type { StatType, ShotEvent } from '@/types'
+import { TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps<{
   gameId: string
@@ -479,9 +480,10 @@ function shotPath(shot: ShotEvent): string {
             @click.stop="confirmShot(false)"
           >Miss</button>
           <button
-            class="rounded px-2 py-1.5 text-xs text-ink-500 hover:text-chalk"
+            class="rounded p-1.5 text-ink-500 hover:text-chalk"
+            title="Cancel" aria-label="Cancel"
             @click.stop="cancelPending"
-          >✕</button>
+          ><XMarkIcon class="h-4 w-4" /></button>
         </div>
       </div>
 
@@ -500,13 +502,15 @@ function shotPath(shot: ShotEvent): string {
             {{ selectedShot.period > 4 ? 'OT' : `Q${selectedShot.period}` }} · {{ selectedShot.made ? 'Made' : 'Miss' }}
           </span>
           <button
-            class="rounded bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 active:scale-95"
+            class="rounded bg-red-800 p-1.5 text-white hover:bg-red-700 active:scale-95"
+            title="Delete shot" aria-label="Delete shot"
             @click.stop="deleteSelectedShot"
-          >Delete</button>
+          ><TrashIcon class="h-4 w-4" /></button>
           <button
-            class="rounded px-2 py-1.5 text-xs text-ink-500 hover:text-chalk"
+            class="rounded p-1.5 text-ink-500 hover:text-chalk"
+            title="Cancel" aria-label="Cancel"
             @click.stop="selectedShotId = null"
-          >✕</button>
+          ><XMarkIcon class="h-4 w-4" /></button>
         </div>
       </div>
     </div>

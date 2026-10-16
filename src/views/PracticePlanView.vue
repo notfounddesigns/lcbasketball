@@ -7,7 +7,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { formatDuration, formatPlanDate, formatTimeWindow, blockRanges, blockTitle, totalMinutes } from '@/lib/practice-utils'
 import PracticePlanModal from '@/components/PracticePlanModal.vue'
 import PracticePlanViewer from '@/components/PracticePlanViewer.vue'
-import { PencilIcon, EyeIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { PencilIcon, EyeIcon, PlusIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
 const { plans, loading, error, fetchPlans, deletePlan } = usePracticePlan()
@@ -92,7 +92,9 @@ function exportPlan(plan: PracticePlan) {
       <div>
         <h1 class="font-stencil text-2xl font-extrabold tracking-tight">Practice Plans</h1>
       </div>
-      <button class="btn-primary capitalize" @click="openNewPlan">+ New plan</button>
+      <button class="btn-primary capitalize" title="New plan" aria-label="New plan" @click="openNewPlan">
+        <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New plan</span>
+      </button>
     </header>
 
     <div class="mb-4">

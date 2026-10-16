@@ -9,7 +9,7 @@ import { PLAY_CATEGORIES, resolveCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import PlayAnimator from '@/components/PlayAnimator.vue'
 import VideoUploader from '@/components/VideoUploader.vue'
-import { BackspaceIcon, PlusIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { BackspaceIcon, PlusIcon, PrinterIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,7 +39,8 @@ const form = reactive<PlayDraft>({
   category: resolveCategory(route.query.category as string | undefined) ?? '',
   court_type: 'half',
   diagram: blankDiagram(),
-  is_scouting: false,
+  // "+ Scouting Report" on the Scouting tab opens the editor with this pre-set.
+  is_scouting: route.query.scouting === '1',
 })
 
 // A play saved under a category that's since been retired keeps that value as an
@@ -362,7 +363,9 @@ async function save() {
       >
         <div class="mb-4 flex items-center justify-between">
           <h2 class="font-stencil text-lg font-bold">New Play</h2>
-          <button class="btn-ghost py-1 text-sm" @click="showMetadataSheet = false">Cancel</button>
+          <button class="btn-ghost p-1.5" title="Cancel" aria-label="Cancel" @click="showMetadataSheet = false">
+            <XMarkIcon class="h-5 w-5" />
+          </button>
         </div>
         <div class="flex flex-col gap-3">
           <div>

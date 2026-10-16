@@ -9,7 +9,7 @@ import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, seasonStat
 import ShotChart from '@/components/ShotChart.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
-import { ArrowLeftIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, UserGroupIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { ArrowLeftIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const {
   players, games, events, allEvents, subEvents, error,
@@ -158,6 +158,8 @@ const selectedPlayer = computed(() => players.value.find((p) => p.id === selecte
 
 async function tap(stat: StatType) {
   if (!activeGame.value || !selectedPlayerId.value) return
+  // A short buzz confirms the tap without looking down (Android; no-op on iOS)
+  navigator.vibrate?.(15)
   await recordStat(activeGame.value.id, selectedPlayerId.value, stat, activePeriod.value)
 }
 
@@ -172,6 +174,10 @@ async function onUndo(playerId: string) {
 }
 
 const boxScore = computed(() => buildBoxScore(players.value, events.value))
+
+const selectedHasEvents = computed(() =>
+  !!selectedPlayerId.value && events.value.some((e) => e.player_id === selectedPlayerId.value),
+)
 
 // ----- box-score stat flash feedback -----
 // Maps each stat to the box-score column it animates over and the amount shown
@@ -467,9 +473,10 @@ const seasonStats = computed<SeasonRow[]>(() => {
       <template v-if="mode === 'game'">
         <button
           v-if="!activeGame"
-          class="rounded-md px-3 py-2 text-xs bg-rim hover:bg-rim/80"
+          class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
+          title="New game" aria-label="New game"
           @click="showNewGameSheet = true"
-        >New Game</button>
+        ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Game</span></button>
       </template>
     </div>
     
@@ -584,7 +591,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
               :class="onCourtIds.has(other.id) ? 'bg-ink-600 ring-1 ring-green-500/60' : 'bg-ink-700'"
               @click="doSub(other.id)"
             >#{{ other.number ?? '—' }} {{ other.name }}</button>
-            <button class="text-xs text-ink-500 hover:text-chalk" @click="subPickerOpen = false">Cancel</button>
+            <button class="text-ink-500 hover:text-chalk" title="Cancel" aria-label="Cancel" @click="subPickerOpen = false"><XMarkIcon class="h-5 w-5" /></button>
           </div>
         </div>
 
@@ -608,27 +615,27 @@ const seasonStats = computed<SeasonRow[]>(() => {
         <!-- Main content: slim stat pane + shot chart + box score -->
         <div class="flex gap-3">
 
-          <!-- Slim stat pane -->
-          <div class="flex w-[72px] shrink-0 flex-col gap-1.5">
+          <!-- Slim stat pane (tablet/desktop; phones get the bottom stat pad) -->
+          <div class="hidden w-24 shrink-0 flex-col gap-2 md:flex">
             <!-- Player badge -->
             <div class="rounded-xl bg-ink-800 p-2 text-center">
               <template v-if="selectedPlayer">
                 <div class="font-mono text-2xl font-black leading-none text-rim">
                   #{{ selectedPlayer.number ?? '—' }}
                 </div>
-                <div class="mt-0.5 truncate text-[9px] leading-tight text-ink-400">
+                <div class="mt-0.5 truncate text-[11px] leading-tight text-ink-400">
                   {{ selectedPlayer.name.split(' ')[0] }}
                 </div>
-                <div class="mt-1.5 flex justify-center gap-1">
-                  <span class="text-ink-700">·</span>
+                <div class="mt-1.5 flex justify-center">
                   <button
-                    class="text-[9px] transition"
+                    class="rounded p-1 transition"
                     :class="subPickerOpen ? 'text-yellow-400' : 'text-ink-500 hover:text-chalk'"
+                    title="Substitute" aria-label="Substitute"
                     @click="subPickerOpen = !subPickerOpen"
-                  >sub</button>
+                  ><ArrowsRightLeftIcon class="h-5 w-5" /></button>
                 </div>
               </template>
-              <div v-else class="py-2 text-[9px] italic leading-tight text-ink-500">
+              <div v-else class="py-2 text-[11px] italic leading-tight text-ink-500">
                 Pick a player
               </div>
             </div>
@@ -637,7 +644,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
             <button
               v-for="b in ACTION_STATS"
               :key="b.stat"
-              class="rounded-lg py-2.5 text-[11px] font-semibold transition"
+              class="min-h-[48px] rounded-lg text-sm font-bold transition"
               :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
               :disabled="!selectedPlayerId"
               @click="tap(b.stat)"
@@ -707,6 +714,47 @@ const seasonStats = computed<SeasonRow[]>(() => {
               :game-id="activeGame.id"
               :player-id="selectedPlayerId"
               :period="activePeriod"/>
+          </div>
+        </div>
+
+        <!-- Room so the fixed stat pad never covers the last of the content -->
+        <div class="h-40 md:hidden" aria-hidden="true" />
+
+        <!-- Phone stat pad: big thumb-reachable buttons pinned above the tab bar -->
+        <div
+          class="fixed inset-x-0 z-20 border-t border-ink-700/60 bg-ink-900/95 px-3 pb-2 pt-2 backdrop-blur-xl md:hidden"
+          style="bottom: calc(62px + env(safe-area-inset-bottom, 0px))"
+        >
+          <div class="mb-2 flex items-center gap-2">
+            <template v-if="selectedPlayer">
+              <span class="font-mono text-xl font-black leading-none text-rim">#{{ selectedPlayer.number ?? '—' }}</span>
+              <span class="truncate text-sm font-semibold">{{ selectedPlayer.name }}</span>
+            </template>
+            <span v-else class="text-sm italic text-ink-500">Tap a player in the box score or on-floor list</span>
+            <button
+              v-if="selectedPlayer"
+              class="ml-auto rounded-lg p-2 transition"
+              :class="subPickerOpen ? 'bg-yellow-500/20 text-yellow-400' : 'bg-ink-800 text-ink-400'"
+              title="Substitute" aria-label="Substitute"
+              @click="subPickerOpen = !subPickerOpen"
+            ><ArrowsRightLeftIcon class="h-5 w-5" /></button>
+            <button
+              v-if="selectedPlayer"
+              class="rounded-lg bg-ink-800 p-2 text-ink-400 disabled:opacity-30"
+              :disabled="!selectedHasEvents"
+              title="Undo last stat" aria-label="Undo last stat"
+              @click="onUndo(selectedPlayerId!)"
+            ><ArrowUturnLeftIcon class="h-5 w-5" /></button>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <button
+              v-for="b in ACTION_STATS"
+              :key="b.stat"
+              class="min-h-[52px] rounded-xl text-sm font-bold transition"
+              :class="[b.tone, selectedPlayerId ? 'active:scale-95 active:brightness-125' : 'opacity-30']"
+              :disabled="!selectedPlayerId"
+              @click="tap(b.stat)"
+            >{{ b.label }}</button>
           </div>
         </div>
       </template>
@@ -790,7 +838,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
       >
         <div class="mb-4 flex items-center justify-between">
           <h2 class="font-stencil text-lg font-bold">New Game</h2>
-          <button class="btn-ghost py-1 text-sm" @click="showNewGameSheet = false">Cancel</button>
+          <button class="btn-ghost p-1.5" title="Cancel" aria-label="Cancel" @click="showNewGameSheet = false"><XMarkIcon class="h-5 w-5" /></button>
         </div>
         <div class="flex flex-col gap-3">
           <div>
@@ -845,7 +893,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
       >
         <div class="mb-4 flex items-center justify-between">
           <h2 class="font-stencil text-lg font-bold">Roster</h2>
-          <button class="btn-ghost py-1 text-sm" @click="showRosterDrawer = false">✕</button>
+          <button class="btn-ghost p-1.5" title="Close" aria-label="Close" @click="showRosterDrawer = false"><XMarkIcon class="h-5 w-5" /></button>
         </div>
 
         <ul class="mb-4 space-y-1 text-sm">
@@ -892,7 +940,7 @@ const seasonStats = computed<SeasonRow[]>(() => {
             <input v-model.number="newPlayerNumber" type="number" placeholder="#" class="input w-14 text-center" />
             <input v-model="newPlayerName" placeholder="Name" class="input grow" @keyup.enter="onAddPlayer" />
           </div>
-          <button class="btn-ghost mt-2 w-full py-1.5 text-xs" @click="onAddPlayer">Add player</button>
+          <button class="btn-ghost mt-2 w-full py-1.5 text-xs" @click="onAddPlayer"><UserPlusIcon class="h-4 w-4" />Add player</button>
         </div>
       </div>
     </Transition>
