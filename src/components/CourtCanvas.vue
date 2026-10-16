@@ -291,7 +291,6 @@ let lastTextTap: { id: string; time: number } | null = null
 
 function onSelectDown(e: PointerEvent) {
   const p = toNorm(e)
-  ;(e.target as Element).setPointerCapture?.(e.pointerId)
   const reversed = [...elements.value].reverse()
 
   // ── priority 0: double-tap a player to give them the ball ──
@@ -453,7 +452,6 @@ function onSelectUp() {
 
 // ---------- draw tools ----------
 function onDrawDown(e: PointerEvent) {
-  ;(e.target as Element).setPointerCapture?.(e.pointerId)
   const p = toNorm(e)
 
   if (tool.value === 'erase') {
@@ -551,6 +549,10 @@ function eraseAt(p: Point) {
   if (changed) commit(next)
 }
 
+// Points closer than this (normalized) are dropped while drawing, so a slow
+// Pencil doesn't pile up hundreds of identical samples.
+const MIN_POINT_GAP = 0.0015
+
 function onDrawMove(e: PointerEvent) {
   if (tool.value === 'erase') {
     if (erasing.value) eraseAt(toNorm(e))
@@ -559,7 +561,16 @@ function onDrawMove(e: PointerEvent) {
   if (!drawing.value) return
   const p = toNorm(e)
   if (drawing.value.type === 'pen') {
-    drawing.value.points.push(p)
+    // Browsers deliver one pointermove per frame; the Pencil samples far more
+    // often. The coalesced events carry the in-between points, so fast strokes
+    // stay smooth instead of turning into jagged straight segments.
+    const samples = e.getCoalescedEvents?.() ?? []
+    const pts = drawing.value.points
+    for (const ev of samples.length ? samples : [e]) {
+      const q = toNorm(ev)
+      const last = pts[pts.length - 1]
+      if (!last || dist(last, q) >= MIN_POINT_GAP) pts.push(q)
+    }
   } else if (drawing.value.type === 'arrow') {
     drawing.value.points = [drawing.value.points[0], p]
   }
@@ -570,7 +581,10 @@ function onDrawUp() {
   if (!drawing.value) return
   const el = drawing.value
   drawing.value = null
-  if (el.type === 'pen' && el.points.length < 2) return
+  // A quick dash or tap — the building block of a hand-drawn dotted line —
+  // often produces a single sample. Keep it as a dot instead of throwing it
+  // away (a zero-length path with round caps renders as a dot).
+  if (el.type === 'pen' && el.points.length === 1) el.points.push({ ...el.points[0] })
   commit([...elements.value, el])
   // Auto-select newly drawn arrow so user can immediately curve it
   if (el.type === 'arrow') {
@@ -603,8 +617,33 @@ function onCourtDoubleClick(e: MouseEvent) {
 }
 
 // ---------- router to per-tool handlers ----------
+// ---------- one pointer at a time ----------
+// Only the pointer that started a gesture may continue or end it. Without this
+// a resting palm, or a second finger, starts a new stroke on top of the one in
+// progress and the first is lost or cut short.
+let activePointerId: number | null = null
+// Palm rejection: while the Apple Pencil is in use, touches are ignored, and
+// for a moment after it lifts (the hand is still on the glass between dashes).
+const PEN_GRACE_MS = 600
+let lastPenAt = 0
+
+function acceptsPointer(e: PointerEvent): boolean {
+  if (activePointerId !== null) return e.pointerId === activePointerId
+  if (e.pointerType === 'pen') return true
+  return !(e.pointerType === 'touch' && performance.now() - lastPenAt < PEN_GRACE_MS)
+}
+
 function onPointerDown(e: PointerEvent) {
-  if (!props.editable) return
+  if (!props.editable || !acceptsPointer(e)) return
+  activePointerId = e.pointerId
+  if (e.pointerType === 'pen') lastPenAt = performance.now()
+  // Capture on the <svg> itself: a child under the finger can be re-rendered
+  // mid-stroke, which would silently drop the capture and the pointerup.
+  try {
+    svgRef.value?.setPointerCapture(e.pointerId)
+  } catch {
+    // The pointer is already gone (released before this ran) — nothing to capture.
+  }
   if (tool.value === 'erase') eraserPos.value = toNorm(e)
   if (tool.value === 'select') onSelectDown(e)
   else onDrawDown(e)
@@ -612,13 +651,19 @@ function onPointerDown(e: PointerEvent) {
 
 function onPointerMove(e: PointerEvent) {
   if (!props.editable) return
+  if (activePointerId !== null && e.pointerId !== activePointerId) return
+  if (e.pointerType === 'pen') lastPenAt = performance.now()
   if (tool.value === 'erase') eraserPos.value = toNorm(e)
+  if (activePointerId === null) return // hover: only the eraser ring follows
   if (tool.value === 'select') onSelectMove(e)
   else onDrawMove(e)
 }
 
-function onPointerUp() {
+function onPointerUp(e?: PointerEvent) {
   if (!props.editable) return
+  if (e && activePointerId !== null && e.pointerId !== activePointerId) return
+  if (e?.pointerType === 'pen') lastPenAt = performance.now()
+  activePointerId = null
   if (tool.value === 'select') onSelectUp()
   else onDrawUp()
 }
@@ -626,7 +671,9 @@ function onPointerUp() {
 // The system can cancel a touch mid-gesture (an incoming call, a palm, the
 // iPad edge swipe). Drop whatever was in progress rather than committing a
 // half-drawn stroke or leaving a drag stuck to the next touch.
-function onPointerCancel() {
+function onPointerCancel(e: PointerEvent) {
+  if (activePointerId !== null && e.pointerId !== activePointerId) return
+  activePointerId = null
   drawing.value = null
   dragKind.value = null
   dragLive.value = null
@@ -635,9 +682,17 @@ function onPointerCancel() {
 }
 
 // Hide the eraser ring when the pointer leaves the canvas
+// Capture is released after every pointerup; if it's lost any other way while
+// a gesture is open (the release never arrived), finish the gesture so the
+// canvas never stays locked to a pointer that's gone.
+function onLostCapture(e: PointerEvent) {
+  if (e.pointerId === activePointerId) onPointerUp(e)
+}
+
+// With the pointer captured, leave only fires once the gesture has ended, so a
+// stroke that drifts past the court edge is no longer cut short.
 function onPointerLeave() {
   eraserPos.value = null
-  onPointerUp()
 }
 
 // Wipes the whole phase, so it asks first (undo only steps back one element).
@@ -1002,6 +1057,7 @@ defineExpose({ exportPng })
         @pointerup="onPointerUp"
         @pointerleave="onPointerLeave"
         @pointercancel="onPointerCancel"
+        @lostpointercapture="onLostCapture"
       >
         <!-- court markings -->
         <g fill="none" stroke="#1c1614" stroke-width="2" opacity="0.85">

@@ -14,22 +14,12 @@ const router = useRouter()
 const { plays, loading, error, fetchPlays, deletePlay, duplicatePlay } = usePlays()
 const { confirm } = useConfirm()
 
-// ---- tabs: playbook / scouting ----
+// The playbook lives on the Plays tab; the same list in "scouting" form is
+// embedded on the Stats page (Scouting tab), next to the games it informs.
+const props = defineProps<{ scouting?: boolean }>()
 type Tab = 'playbook' | 'scouting'
-// Lives in the URL (?tab=scouting) like the open category, so coming back from
-// the editor returns to the same tab.
-const activeTab = computed<Tab>({
-  get: () => (route.query.tab === 'scouting' ? 'scouting' : 'playbook'),
-  set: (tab) => {
-    router.push({ query: tab === 'scouting' ? { tab } : {} })
-  },
-})
+const activeTab = computed<Tab>(() => (props.scouting ? 'scouting' : 'playbook'))
 const search = ref('')
-
-const tabLabels: Record<Tab, string> = {
-  playbook: 'Playbook',
-  scouting: 'Scouting',
-}
 
 const tabPlays = computed(() =>
   activeTab.value === 'scouting'
@@ -202,21 +192,6 @@ function onDragEnd() {
       </button>
     </header>
 
-    <!-- Playbook / Scouting -->
-    <div class="mb-4 flex gap-0 overflow-hidden rounded-lg border border-ink-700">
-      <button
-        v-for="tab in (['playbook', 'scouting'] as const)"
-        :key="tab"
-        :class="[
-          'flex-1 py-2 text-sm font-medium transition',
-          activeTab === tab ? 'bg-ink-700 text-chalk' : 'text-ink-500 hover:text-chalk',
-        ]"
-        @click="search = ''; activeTab = tab"
-      >
-        {{ tabLabels[tab] }}
-      </button>
-    </div>
-
     <div class="mb-4">
       <input
         v-model="search"
@@ -290,7 +265,7 @@ function onDragEnd() {
     <div
       v-if="!showCategoryGrid"
       class="flex flex-col gap-4 overflow-y-auto pb-nav md:flex-row md:flex-wrap md:justify-center md:items-start"
-      :style="{ height: activeTab === 'playbook' && selectedCategory ? 'calc(100dvh - 286px)' : 'calc(100dvh - 240px)' }"
+      :style="{ height: activeTab === 'playbook' && selectedCategory ? 'calc(100dvh - 286px)' : scouting ? 'calc(100dvh - 300px)' : 'calc(100dvh - 240px)' }"
     >
       <article
         v-for="p in sortedFiltered"

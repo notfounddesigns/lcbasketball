@@ -27,10 +27,6 @@ const THREE_R = 237
 const THREE_CORNER_X = 44
 const THREE_ARC_Y_HALF = 182
 
-// Free throw line y in SVG units
-const FT_Y_SVG = KEY_LENGTH + BASKET_INSET
-const FT_Y_TOLERANCE = 12
-const PAINT_HALF_W = KEY_HALF_W + 5
 
 // Pending shot placement
 const pendingShot = ref<{ x: number; y: number } | null>(null)
@@ -113,10 +109,11 @@ const displayShots = computed<ShotEvent[]>(() =>
   ),
 )
 
-// FG% summary
+// FG% summary — every shot on the chart is a field goal (free throws are
+// recorded with the FT buttons, not on the court).
 const fgSummary = computed(() => {
-  const made = only2FGS(displayShots.value.filter((s) => s.made)).length
-  const total = only2FGS(displayShots.value).length
+  const made = displayShots.value.filter((s) => s.made).length
+  const total = displayShots.value.length
   const pct = total > 0 ? Math.round((made / total) * 100) : 0
   return { made, total, pct }
 })
@@ -128,24 +125,19 @@ const threeFGSummary = computed(() => {
   return { made, total, pct }
 })
 
+// Free throws have no court position, so their line comes from the stat log,
+// filtered the same way as the markers (selected player, period).
 const ftSummary = computed(() => {
-  const made = onlyFTS(displayShots.value.filter((s) => s.made)).length
-  const total = onlyFTS(displayShots.value).length
+  const fts = events.value.filter((e) =>
+    (e.stat === 'ft_made' || e.stat === 'ft_miss') &&
+    (!props.playerId || e.player_id === props.playerId) &&
+    (periodFilter.value === 'all' || e.period === periodFilter.value),
+  )
+  const made = fts.filter((e) => e.stat === 'ft_made').length
+  const total = fts.length
   const pct = total > 0 ? Math.round((made / total) * 100) : 0
   return { made, total, pct }
 })
-
-function onlyFTS(shots: ShotEvent[]): ShotEvent[] {
-  return shots.filter(s => {
-    return getShotType(s.x, s.y) === 'ft'
-  })
-}
-
-function only2FGS(shots: ShotEvent[]): ShotEvent[] {
-  return shots.filter(s => {
-    return getShotType(s.x, s.y) !== 'ft'
-  })
-}
 
 function only3FGS(shots: ShotEvent[]): ShotEvent[] {
   return shots.filter(s => {
@@ -169,23 +161,14 @@ function isThreePointer(nx: number, ny: number): boolean {
   return Math.hypot(dx, dy) > THREE_R
 }
 
-// Classify shot as free throw, 2FG, or 3FG
-function getShotType(nx: number, ny: number): 'ft' | 'two' | 'three' {
-  const svgX = nx * VB_W
-  const svgY = ny * VB_H
-  // Near the free throw line and within the paint width
-  if (
-    Math.abs(svgY - FT_Y_SVG) < FT_Y_TOLERANCE &&
-    svgX > VB_W / 2 - (PAINT_HALF_W - 40) &&
-    svgX < VB_W / 2 + (PAINT_HALF_W - 40)
-  ) {
-    return 'ft'
-  }
+// Classify a court tap as a 2FG or 3FG. Free throws aren't inferred from
+// position any more — a jumper from the line is a 2, and FTs have their own
+// Made/Miss buttons in the tracker.
+function getShotType(nx: number, ny: number): 'two' | 'three' {
   return isThreePointer(nx, ny) ? 'three' : 'two'
 }
 
-function statFor(type: 'ft' | 'two' | 'three', made: boolean): StatType {
-  if (type === 'ft') return made ? 'ft_made' : 'ft_miss'
+function statFor(type: 'two' | 'three', made: boolean): StatType {
   if (type === 'three') return made ? 'three_made' : 'three_miss'
   return made ? 'fg_made' : 'fg_miss'
 }
@@ -195,7 +178,6 @@ const pendingShotType = computed(() =>
 )
 
 const shotTypeLabel = computed(() => {
-  if (pendingShotType.value === 'ft') return 'Free Throw'
   if (pendingShotType.value === 'three') return '3-pointer'
   return '2-pointer'
 })
@@ -285,7 +267,7 @@ async function deleteSelectedShot() {
   selectedShotId.value = null
 }
 
-// Shape encodes shot type (circle 2PT, diamond 3PT, square FT) and fill encodes
+// Shape encodes shot type (circle 2PT, diamond 3PT) and fill encodes
 // the result (solid = made, hollow = miss), so markers read without color.
 function shotPath(shot: ShotEvent): string {
   const cx = shot.x * VB_W
@@ -294,10 +276,6 @@ function shotPath(shot: ShotEvent): string {
   if (type === 'three') {
     const r = 8.5
     return `M ${cx} ${cy - r} L ${cx + r} ${cy} L ${cx} ${cy + r} L ${cx - r} ${cy} Z`
-  }
-  if (type === 'ft') {
-    const h = 6
-    return `M ${cx - h} ${cy - h} H ${cx + h} V ${cy + h} H ${cx - h} Z`
   }
   const r = 6.5
   return `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`
@@ -356,9 +334,6 @@ function shotPath(shot: ShotEvent): string {
         </span>
         <span class="inline-flex items-center gap-1">
           <svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT
-        </span>
-        <span class="inline-flex items-center gap-1">
-          <svg width="10" height="10"><rect x="1" y="1" width="8" height="8" fill="#9ca3af"/></svg>FT
         </span>
       </span>
     </div>

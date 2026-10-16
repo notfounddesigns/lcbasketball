@@ -33,6 +33,11 @@ const { isAuthenticated } = useAuth()
 // actually protected by the `authenticated` RLS policies in supabase/schema.sql,
 // so a forged client-side session still reads nothing.
 router.beforeEach(async (to) => {
+  // Scouting reports moved to the Stats page; keep old links working. Checked
+  // here rather than in a per-route guard so a query-only change counts too.
+  if (to.path === '/plays' && to.query.tab === 'scouting') {
+    return { path: '/stats', query: { mode: 'scouting' } }
+  }
   if (import.meta.env.DEV) { return true }
   // Awaited on every navigation, but initAuth caches its promise, so only the
   // first one pays for restoring the persisted session.

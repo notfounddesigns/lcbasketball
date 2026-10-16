@@ -76,7 +76,7 @@
 20. - [x] **[high]** Practice plan save can silently lose all blocks — `updatePlan` deletes items then re-inserts, and `createPlan`/`updatePlan` ignore the insert result (`usePracticePlan.ts`) before closing the modal. Do it in one transaction (RPC) or keep the modal open on failure
 21. - [x] Shot can be credited to the wrong player — `confirmShot` re-reads `props.playerId`/`props.period` after `await recordShot`; capture them before awaiting
 22. - [ ] Shot markers and box-score stats can drift apart — `recordShot`'s result is ignored, and shots/stats are paired only by time, so Undo can delete an unrelated shot. Add a `stat_event_id` column on `shot_events`
-23. - [ ] Jump shots from the free-throw line are logged as free throws (1 pt) — `getShotType` treats any tap near the FT line as an FT. Add an explicit FT button instead of inferring from position
+23. - [x] Jump shots from the free-throw line are logged as free throws (1 pt) — `getShotType` treats any tap near the FT line as an FT. Add an explicit FT button instead of inferring from position
 24. - [x] Season tab is stale until reload — `recordStat`, `undoLastFor` and `deleteGame` update `events` but not `allEvents`
 25. - [x] Switching games can show the previous game's events/subs/shots — `openGame` doesn't clear them first and late responses aren't ignored
 26. - [x] Reopening a game (or refreshing) resets the quarter to Q1, so later stats are filed under the wrong period — persist the open game and quarter

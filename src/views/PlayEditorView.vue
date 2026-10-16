@@ -81,11 +81,13 @@ function goBack() {
     router.back()
     return
   }
+  // Scouting reports live on the Stats page's Scouting tab.
+  if (form.is_scouting) {
+    router.push({ path: '/stats', query: { mode: 'scouting' } })
+    return
+  }
   const category = resolveCategory(form.category)
-  router.push({
-    path: '/plays',
-    query: form.is_scouting ? { tab: 'scouting' } : category ? { category } : {},
-  })
+  router.push({ path: '/plays', query: category ? { category } : {} })
 }
 
 // ---------- phase management ----------
