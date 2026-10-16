@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { capitalize, computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { capitalize, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   ArrowElement,
   CourtType,
@@ -8,8 +8,9 @@ import type {
   MarkerElement,
   PenElement,
   Point,
+  TextElement,
 } from '@/types'
-import { ArrowUturnLeftIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, HandRaisedIcon, PencilIcon, ArrowUpRightIcon, UserPlusIcon } from '@heroicons/vue/24/outline';
+import { ArrowUturnLeftIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, HandRaisedIcon, PencilIcon, ArrowUpRightIcon, UserPlusIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/vue/24/outline';
 import { useConfirm } from '@/composables/useConfirm'
 
 const { confirm } = useConfirm()
@@ -21,7 +22,7 @@ const { confirm } = useConfirm()
 const props = defineProps<{ modelValue: Diagram; editable?: boolean; totalPhases: number; tool?: Tool; autoHeight?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [Diagram], isAnimating: [boolean], exportPng: [] }>()
 
-type Tool = 'select' | 'pen' | 'arrow' | 'marker' | 'erase' | 'undo'
+type Tool = 'select' | 'pen' | 'arrow' | 'marker' | 'text' | 'erase' | 'undo'
 const tool = ref<Tool>(props.tool || 'select')
 const color = ref('#000000')
 const strokeWidth = ref(2)
@@ -149,12 +150,13 @@ const eraserPos = ref<Point | null>(null)
 // ---------- select/drag state ----------
 const selectedId = ref<string | null>(null)
 
-type DragKind = 'marker' | 'arrow-tail' | 'arrow-head' | 'arrow-control'
+type DragKind = 'marker' | 'text' | 'arrow-tail' | 'arrow-head' | 'arrow-control'
 const dragKind = ref<DragKind | null>(null)
 // Live copy of element being dragged, rendered instead of committed version
 const dragLive = ref<DiagramElement | null>(null)
 
 watch(tool, () => {
+  commitTextEdit()
   selectedId.value = null
   dragKind.value = null
   dragLive.value = null
@@ -207,7 +209,7 @@ function controlOf(el: ArrowElement): Point {
 
 // Distance from point to nearest vertex of element (normalized space)
 function distToElement(p: Point, el: DiagramElement): number {
-  if (el.type === 'marker') return dist(p, el.at)
+  if (el.type === 'marker' || el.type === 'text') return dist(p, el.at)
   const pts = el.type === 'arrow' && el.control
     ? [...el.points, el.control]
     : el.points
@@ -221,6 +223,71 @@ const HIT_BODY   = 0.030  // normalized hit radius for element body
 // (r=23 SVG units on a 500-wide half court). Kept tight so arrow endpoints
 // sitting just off a player can still be grabbed.
 const HIT_MARKER = 0.035
+
+// ---------- text annotations ----------
+const TEXT_FONT = 16 // SVG units
+const TEXT_MAX = 40 // characters — keep labels short so they don't swamp the court
+
+// Rough rendered size of a label in SVG units (no DOM measuring needed for hit tests)
+function textBox(el: TextElement) {
+  const w = Math.max(24, el.text.length * TEXT_FONT * 0.58 + 12)
+  const h = TEXT_FONT + 10
+  return { w, h }
+}
+
+function hitText(p: Point, el: TextElement): boolean {
+  const { w, h } = textBox(el)
+  return Math.abs(p.x - el.at.x) * W.value < w / 2 && Math.abs(p.y - el.at.y) * H.value < h / 2
+}
+
+// Inline editor shown over the court while typing a label
+const textEdit = ref<{ id: string | null; at: Point; value: string; left: number; top: number } | null>(null)
+const textInputRef = ref<HTMLInputElement | null>(null)
+
+function openTextEditor(at: Point, existing?: TextElement) {
+  const svg = svgRef.value
+  const container = containerRef.value
+  if (!svg || !container) return
+  const s = svg.getBoundingClientRect()
+  const c = container.getBoundingClientRect()
+  textEdit.value = {
+    id: existing?.id ?? null,
+    at,
+    value: existing?.text ?? '',
+    left: s.left - c.left + at.x * s.width,
+    top: s.top - c.top + at.y * s.height,
+  }
+  nextTick(() => textInputRef.value?.focus())
+}
+
+function commitTextEdit() {
+  const edit = textEdit.value
+  if (!edit) return
+  textEdit.value = null
+  const text = edit.value.trim().slice(0, TEXT_MAX)
+  if (edit.id) {
+    // Editing: blank text removes the label
+    commit(text
+      ? elements.value.map((el) => (el.id === edit.id && el.type === 'text' ? { ...el, text } : el))
+      : elements.value.filter((el) => el.id !== edit.id))
+  } else if (text) {
+    const el: TextElement = {
+      id: crypto.randomUUID(),
+      type: 'text',
+      color: color.value,
+      width: strokeWidth.value,
+      at: edit.at,
+      text,
+    }
+    commit([...elements.value, el])
+  }
+}
+
+function cancelTextEdit() {
+  textEdit.value = null
+}
+
+let lastTextTap: { id: string; time: number } | null = null
 
 function onSelectDown(e: PointerEvent) {
   const p = toNorm(e)
@@ -241,9 +308,28 @@ function onSelectDown(e: PointerEvent) {
     return
   }
 
+  // Double-tap a text label to edit it
+  const tappedText = reversed.find((el): el is TextElement => el.type === 'text' && hitText(p, el))
+  if (tappedText) {
+    const now = performance.now()
+    if (lastTextTap?.id === tappedText.id && now - lastTextTap.time < DOUBLE_TAP_MS) {
+      lastTextTap = null
+      selectedId.value = tappedText.id
+      e.preventDefault()
+      openTextEditor(tappedText.at, tappedText)
+      return
+    }
+    lastTextTap = { id: tappedText.id, time: now }
+  }
+
   // ── priority 1: handles of already-selected element ──
   if (selectedId.value) {
     const sel = elements.value.find((el) => el.id === selectedId.value)
+    if (sel?.type === 'text' && hitText(p, sel)) {
+      dragKind.value = 'text'
+      dragLive.value = { ...sel }
+      return
+    }
     if (sel?.type === 'marker' && dist(p, sel.at) < HIT_MARKER) {
       dragKind.value = 'marker'
       dragLive.value = { ...sel }
@@ -277,6 +363,14 @@ function onSelectDown(e: PointerEvent) {
       dragLive.value = { ...el }
       return
     }
+  }
+
+  // Text labels
+  if (tappedText) {
+    selectedId.value = tappedText.id
+    dragKind.value = 'text'
+    dragLive.value = { ...tappedText }
+    return
   }
 
   // Arrows: endpoint handles or body
@@ -337,7 +431,7 @@ function onSelectMove(e: PointerEvent) {
   if (!dragKind.value || !dragLive.value) return
   const p = toNorm(e)
   const el = dragLive.value
-  if (dragKind.value === 'marker' && el.type === 'marker') {
+  if ((dragKind.value === 'marker' && el.type === 'marker') || (dragKind.value === 'text' && el.type === 'text')) {
     dragLive.value = { ...el, at: p }
   } else if (dragKind.value === 'arrow-tail' && el.type === 'arrow') {
     dragLive.value = { ...el, points: [p, el.points[1]] }
@@ -386,6 +480,18 @@ function onDrawDown(e: PointerEvent) {
       markerLabel.value = '1'
       tool.value = 'select'
     }
+    return
+  }
+
+  if (tool.value === 'text') {
+    // Stop the follow-up mousedown from moving focus off the editor we open
+    e.preventDefault()
+    // A tap while the editor is open just closes it (keeping what was typed)
+    if (textEdit.value) {
+      commitTextEdit()
+      return
+    }
+    openTextEditor(p)
     return
   }
 
@@ -829,7 +935,7 @@ defineExpose({ exportPng })
     <!-- ── COURT ── -->
     <div
       ref="containerRef"
-      class="court-surface flex w-full items-center justify-center overflow-hidden rounded-lg border border-ink-700 bg-court-wood"
+      class="court-surface relative flex w-full items-center justify-center overflow-hidden rounded-lg border border-ink-700 bg-court-wood"
       :style="autoHeight ? {} : { height: `${availableHeight}px` }"
       @touchend="onCourtTouchEnd"
       @dblclick="onCourtDoubleClick"
@@ -939,6 +1045,22 @@ defineExpose({ exportPng })
             />
           </template>
 
+          <text
+            v-else-if="el.type === 'text'"
+            :x="el.at.x * W"
+            :y="el.at.y * H"
+            text-anchor="middle"
+            dominant-baseline="central"
+            :font-size="TEXT_FONT"
+            font-weight="600"
+            font-family="Inter, system-ui, sans-serif"
+            :fill="el.color"
+            stroke="#e7c993"
+            stroke-width="4"
+            stroke-linejoin="round"
+            paint-order="stroke"
+          >{{ el.text }}</text>
+
           <template v-else-if="el.type === 'marker'">
             <circle
               :cx="el.at.x * W"
@@ -973,6 +1095,20 @@ defineExpose({ exportPng })
                 :cx="el.at.x * W"
                 :cy="el.at.y * H"
                 r="23"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+                stroke-dasharray="5 3"
+                opacity="0.85"
+              />
+              <!-- text: dashed box -->
+              <rect
+                v-else-if="el.type === 'text'"
+                :x="el.at.x * W - textBox(el).w / 2"
+                :y="el.at.y * H - textBox(el).h / 2"
+                :width="textBox(el).w"
+                :height="textBox(el).h"
+                rx="4"
                 fill="none"
                 stroke="white"
                 stroke-width="2"
@@ -1025,6 +1161,21 @@ defineExpose({ exportPng })
           pointer-events="none"
         />
       </svg>
+
+      <!-- inline text-annotation editor -->
+      <input
+        v-if="textEdit"
+        ref="textInputRef"
+        v-model="textEdit.value"
+        :maxlength="TEXT_MAX"
+        placeholder="Label… (Enter to place)"
+        class="absolute z-10 w-44 -translate-x-1/2 -translate-y-1/2 rounded-md border border-ink-600 bg-ink-900/95 px-2 py-1 text-sm text-chalk shadow-xl outline-none focus:border-rim"
+        :style="{ left: `${textEdit.left}px`, top: `${textEdit.top}px` }"
+        @pointerdown.stop
+        @keydown.enter.prevent="commitTextEdit"
+        @keydown.esc.prevent="cancelTextEdit"
+        @blur="commitTextEdit"
+      />
     </div>
 
     <!-- ── BOTTOM TOOLBAR (editable only) ── -->
@@ -1032,7 +1183,7 @@ defineExpose({ exportPng })
       <!-- Tool selector strip -->
       <div class="flex rounded-2xl bg-ink-800 p-0.5 divide-x-2 divide-ink-500">
         <button
-          v-for="(t, index) in (['undo', 'select', 'pen', 'arrow', 'marker', 'erase'] as Tool[])"
+          v-for="(t, index) in (['undo', 'select', 'pen', 'arrow', 'marker', 'text', 'erase'] as Tool[])"
           :key="t"
           class="flex flex-1 items-center justify-center py-1.5 transition"
           :class="[tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk']"
@@ -1044,6 +1195,7 @@ defineExpose({ exportPng })
           <PencilIcon v-else-if="t === 'pen'" class="h-5 w-5" />
           <ArrowUpRightIcon v-else-if="t === 'arrow'" class="h-5 w-5" />
           <UserPlusIcon v-else-if="t === 'marker'" class="h-5 w-5" />
+          <ChatBubbleBottomCenterTextIcon v-else-if="t === 'text'" class="h-5 w-5" />
           <TrashIcon v-else-if="t === 'erase'" class="h-5 w-5" />
         </button>
       </div>

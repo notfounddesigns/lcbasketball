@@ -281,3 +281,13 @@ alter table public.practice_plans add column if not exists end_time   time;
 -- Both nullable — plans saved before this migration have neither.
 alter table public.practice_plans add column if not exists quote        text;
 alter table public.practice_plans add column if not exists quote_author text;
+
+-- ============================================================
+-- Migration: games record the final score
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- Entered by the coach once the game ends. Both nullable — a game in progress
+-- (or saved before this migration) has no final score yet.
+alter table public.games add column if not exists our_score int check (our_score >= 0);
+alter table public.games add column if not exists opp_score int check (opp_score >= 0);
