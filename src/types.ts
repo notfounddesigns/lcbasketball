@@ -4,7 +4,7 @@
 
 export type CourtType = 'full' | 'half'
 
-export type ElementType = 'pen' | 'arrow' | 'marker'
+export type ElementType = 'pen' | 'arrow' | 'marker' | 'text'
 
 export interface Point {
   x: number // 0..1 normalized to court width
@@ -37,7 +37,14 @@ export interface MarkerElement extends BaseElement {
   team: 'home' | 'away' | 'ball'
 }
 
-export type DiagramElement = PenElement | ArrowElement | MarkerElement
+// Free-form coaching note placed on the court, e.g. "screen here".
+export interface TextElement extends BaseElement {
+  type: 'text'
+  at: Point // centre of the label
+  text: string
+}
+
+export type DiagramElement = PenElement | ArrowElement | MarkerElement | TextElement
 
 export interface Diagram {
   courtType: CourtType
@@ -86,6 +93,8 @@ export interface Game {
   played_on: string // ISO date
   location: string | null
   notes: string | null
+  our_score?: number | null // final score, null until recorded
+  opp_score?: number | null
   created_at: string
 }
 

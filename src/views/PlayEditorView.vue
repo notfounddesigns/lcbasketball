@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Diagram, DiagramElement, MarkerElement, PlayDraft } from '@/types'
 import { usePlays } from '@/composables/usePlays'
+import { useToast } from '@/composables/useToast'
 import { useStats } from '@/composables/useStats'
 import { PLAY_CATEGORIES, resolveCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
@@ -12,7 +13,8 @@ import { BackspaceIcon, PlusIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/
 
 const route = useRoute()
 const router = useRouter()
-const { plays, fetchPlays, createPlay, updatePlay } = usePlays()
+const { plays, error: playsError, fetchPlays, createPlay, updatePlay } = usePlays()
+const { toast } = useToast()
 const { players, fetchPlayers } = useStats()
 
 // null when on /plays/new; UUID string when on /plays/:id
@@ -181,10 +183,14 @@ async function save() {
   saving.value = true
   try {
     if (playId.value) {
-      await updatePlay(playId.value, { ...form })
+      const updated = await updatePlay(playId.value, { ...form })
+      if (updated) toast('Play saved')
+      else toast(playsError.value ?? 'Could not save play', 'error')
     } else {
       const created = await createPlay({ ...form })
+      if (!created) toast(playsError.value ?? 'Could not create play', 'error')
       if (created) {
+        toast('Play created')
         showMetadataSheet.value = false
         // Swap to edit route so the video section becomes available
         await router.replace(`/plays/${created.id}`)

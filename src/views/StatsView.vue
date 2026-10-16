@@ -4,6 +4,7 @@ import type { Game, Player, StatEvent, StatType } from '@/types'
 import { useStats } from '@/composables/useStats'
 import { useShotChart } from '@/composables/useShotChart'
 import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, seasonStatsToCsv } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
 import StatFlash from '@/components/StatFlash.vue'
@@ -15,11 +16,12 @@ const {
   fetchPlayers, fetchGames, fetchEvents, fetchAllEvents,
   fetchSubEvents, recordSub,
   addPlayer, updatePlayer, deletePlayer,
-  createGame, deleteGame,
+  createGame, updateGame, deleteGame,
   recordStat, undoLastFor,
 } = useStats()
 const { shots, deleteShot } = useShotChart()
 const { confirm } = useConfirm()
+const { toast } = useToast()
 
 // Shooting stats are recorded alongside a shot_event on the shot chart, so
 // undoing one must also remove its paired shot marker.
@@ -54,12 +56,14 @@ const newPlayerName = ref('')
 const newPlayerNumber = ref<number | null>(null)
 async function onAddPlayer() {
   if (!newPlayerName.value.trim()) return
-  await addPlayer({
+  const added = await addPlayer({
     name: newPlayerName.value.trim(),
     number: newPlayerNumber.value,
     position: null,
     active: true,
   })
+  if (!added) return
+  toast(`${added.name} added`)
   newPlayerName.value = ''
   newPlayerNumber.value = null
 }
@@ -76,10 +80,12 @@ function startEditPlayer(p: Player) {
 
 async function saveEditPlayer(id: string) {
   if (!editPlayerName.value.trim()) return
-  await updatePlayer(id, {
+  const updated = await updatePlayer(id, {
     name: editPlayerName.value.trim(),
     number: editPlayerNumber.value,
   })
+  if (!updated) return
+  toast('Player updated')
   editingPlayerId.value = null
 }
 
@@ -108,6 +114,7 @@ async function onCreateGame() {
     notes: null,
   })
   if (g) {
+    toast(`Game vs ${g.opponent} created`)
     newOpponent.value = ''
     showNewGameSheet.value = false
     selectedPlayerId.value = null
@@ -119,6 +126,7 @@ async function openGame(g: Game) {
   activeGame.value = g
   activePeriod.value = 1
   selectedPlayerId.value = null
+  editingScore.value = false
   await Promise.all([fetchEvents(g.id), fetchSubEvents(g.id)])
 }
 
@@ -277,6 +285,69 @@ function exportSeasonCsv() {
   downloadCsv(`season-stats-${new Date().toLocaleDateString('en-CA')}.csv`, csv)
 }
 
+// ----- final score -----
+const editingScore = ref(false)
+const ourScoreInput = ref<number | null>(null)
+const oppScoreInput = ref<number | null>(null)
+
+const teamPoints = computed(() => boxScore.value.reduce((sum, r) => sum + r.pts, 0))
+
+function hasFinal(g: Game) {
+  return g.our_score != null && g.opp_score != null
+}
+
+function resultLabel(g: Game) {
+  if (!hasFinal(g)) return null
+  const diff = g.our_score! - g.opp_score!
+  return diff > 0 ? 'W' : diff < 0 ? 'L' : 'T'
+}
+
+function startEditScore() {
+  if (!activeGame.value) return
+  // Default our score to the box-score total so the coach only types theirs.
+  ourScoreInput.value = activeGame.value.our_score ?? teamPoints.value
+  oppScoreInput.value = activeGame.value.opp_score ?? null
+  editingScore.value = true
+}
+
+async function saveScore() {
+  if (!activeGame.value) return
+  const ours = ourScoreInput.value
+  const theirs = oppScoreInput.value
+  const valid = (n: number | null) => n == null || (Number.isInteger(n) && n >= 0)
+  if (!valid(ours) || !valid(theirs)) {
+    toast('Scores must be whole numbers', 'error')
+    return
+  }
+  const updated = await updateGame(activeGame.value.id, { our_score: ours, opp_score: theirs })
+  if (!updated) {
+    toast('Could not save score', 'error')
+    return
+  }
+  activeGame.value = updated
+  editingScore.value = false
+  toast('Final score saved')
+}
+
+// ----- on-floor lineup (derived from the sub log) -----
+// There's no stored starting five, so infer it: walking the subs in order,
+// a player's last sub decides whether they're on or off. A player who never
+// appears in a sub but has stats this game must have played without being
+// subbed, so count them as on the floor.
+const onCourtIds = computed(() => {
+  const state = new Map<string, boolean>()
+  for (const sub of subEvents.value) {
+    state.set(sub.player_id_in, true)
+    state.set(sub.player_id_out, false)
+  }
+  for (const e of events.value) {
+    if (!state.has(e.player_id)) state.set(e.player_id, true)
+  }
+  return new Set([...state].filter(([, on]) => on).map(([id]) => id))
+})
+
+const onCourtPlayers = computed(() => players.value.filter((p) => onCourtIds.value.has(p.id)))
+
 // ----- substitution UI -----
 const subPickerOpen = ref(false)
 
@@ -424,6 +495,12 @@ const seasonStats = computed<SeasonRow[]>(() => {
             @click="openGame(g)">
             <p class="font-stencil font-bold leading-tight">vs {{ g.opponent }}</p>
             <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}</p>
+            <p v-if="hasFinal(g)" class="mt-2 font-mono text-sm">
+              <span
+                class="mr-1 font-bold"
+                :class="resultLabel(g) === 'W' ? 'text-green-400' : resultLabel(g) === 'L' ? 'text-rim' : 'text-ink-400'"
+              >{{ resultLabel(g) }}</span>{{ g.our_score }}–{{ g.opp_score }}
+            </p>
             <button
               class="absolute right-2 top-2 rounded p-1 text-[10px] text-red-500 hover:text-red-300 group-hover:block"
               @click.stop="onDeleteGame(g)">
@@ -446,6 +523,41 @@ const seasonStats = computed<SeasonRow[]>(() => {
             vs {{ activeGame.opponent }}<br />
             <span class="text-sm text-ink-500">{{ activeGame.played_on }}</span>
           </span>
+          <button
+            v-if="!editingScore"
+            class="inline-flex items-center gap-1 self-center rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs hover:text-chalk"
+            :title="hasFinal(activeGame) ? 'Edit final score' : 'Record final score'"
+            @click="startEditScore"
+          >
+            <template v-if="hasFinal(activeGame)">
+              <span
+                class="font-bold"
+                :class="resultLabel(activeGame) === 'W' ? 'text-green-400' : resultLabel(activeGame) === 'L' ? 'text-rim' : 'text-ink-400'"
+              >{{ resultLabel(activeGame) }}</span>
+              {{ activeGame.our_score }}–{{ activeGame.opp_score }}
+            </template>
+            <span v-else class="font-sans text-ink-400">Final score</span>
+          </button>
+          <form
+            v-else
+            class="flex items-center gap-1 self-center"
+            @submit.prevent="saveScore"
+          >
+            <input
+              v-model.number="ourScoreInput"
+              type="number" min="0" inputmode="numeric" aria-label="Our score"
+              class="input w-14 py-1 text-center text-xs"
+            />
+            <span class="text-ink-500">–</span>
+            <input
+              v-model.number="oppScoreInput"
+              type="number" min="0" inputmode="numeric" :aria-label="`${activeGame.opponent} score`"
+              :placeholder="activeGame.opponent.slice(0, 3).toUpperCase()"
+              class="input w-14 py-1 text-center text-xs"
+            />
+            <button type="submit" class="text-home" title="Save score"><CheckIcon class="h-5 w-5" /></button>
+            <button type="button" class="text-ink-500" title="Cancel" @click="editingScore = false"><XMarkIcon class="h-5 w-5" /></button>
+          </form>
           <div class="ml-auto flex items-center gap-1">
             <button
               v-for="p in PERIODS"
@@ -466,13 +578,31 @@ const seasonStats = computed<SeasonRow[]>(() => {
           </p>
           <div class="flex flex-wrap gap-1.5">
             <button
-              v-for="other in players.filter(op => op.id !== selectedPlayerId)"
+              v-for="other in [...onCourtPlayers, ...players.filter(op => !onCourtIds.has(op.id))].filter(op => op.id !== selectedPlayerId)"
               :key="other.id"
-              class="rounded-lg bg-ink-700 px-3 py-1.5 text-xs text-chalk hover:bg-rim hover:text-white"
+              class="rounded-lg px-3 py-1.5 text-xs text-chalk hover:bg-rim hover:text-white"
+              :class="onCourtIds.has(other.id) ? 'bg-ink-600 ring-1 ring-green-500/60' : 'bg-ink-700'"
               @click="doSub(other.id)"
             >#{{ other.number ?? '—' }} {{ other.name }}</button>
             <button class="text-xs text-ink-500 hover:text-chalk" @click="subPickerOpen = false">Cancel</button>
           </div>
+        </div>
+
+        <!-- On-floor lineup, inferred from substitutions -->
+        <div v-if="onCourtPlayers.length" class="flex flex-wrap items-center gap-1.5 text-xs">
+          <span class="text-ink-500">On floor</span>
+          <button
+            v-for="p in onCourtPlayers"
+            :key="p.id"
+            class="rounded-full border px-2 py-0.5 transition"
+            :class="selectedPlayerId === p.id
+              ? 'border-green-400 bg-green-500/20 text-chalk'
+              : 'border-green-500/40 text-green-300 hover:bg-green-500/10'"
+            @click="selectedPlayerId = selectedPlayerId === p.id ? null : p.id"
+          >#{{ p.number ?? '—' }} {{ p.name.split(' ')[0] }}</button>
+          <span v-if="onCourtPlayers.length !== 5" class="text-[11px] text-yellow-400/80">
+            ({{ onCourtPlayers.length }} — log subs to correct)
+          </span>
         </div>
 
         <!-- Main content: slim stat pane + shot chart + box score -->
@@ -539,6 +669,11 @@ const seasonStats = computed<SeasonRow[]>(() => {
                     @click="selectedPlayerId = selectedPlayerId === r.player_id ? null : r.player_id"
                   >
                     <td class="py-2 text-left">
+                      <span
+                        class="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                        :class="onCourtIds.has(r.player_id) ? 'bg-green-400' : 'bg-transparent'"
+                        :title="onCourtIds.has(r.player_id) ? 'On the floor' : undefined"
+                      />
                       <span class="font-mono text-xs text-ink-500">#{{ r.number ?? '—' }}</span>
                       <span class="ml-1">{{ r.name }}</span>
                     </td>
