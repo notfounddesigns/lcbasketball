@@ -71,7 +71,7 @@ onBeforeUnmount(() => clearTimeout(printTimer))
           <CourtCanvas :model-value="phase" :total-phases="allPhases.length" auto-height />
         </div>
 
-        <div v-if="play.description && idx === 0" class="mt-6 rounded border border-gray-300 p-4">
+        <div v-if="play.description" class="mt-6 rounded border border-gray-300 p-4">
           <p class="mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">Notes</p>
           <p class="whitespace-pre-wrap text-sm leading-relaxed">{{ play.description }}</p>
         </div>
@@ -83,9 +83,11 @@ onBeforeUnmount(() => clearTimeout(printTimer))
 <style>
 /* ── PRINT ── */
 @media print {
-  /* Hide everything except the teleported print-sheet (direct body child) */
-  body > *:not(.print-sheet) { display: none !important; }
-  body, html { background: white !important; overflow: visible !important; }
+  /* Hide everything except the teleported print-sheet (direct body child).
+     Keyed on the sheet being in the DOM: these global styles stay loaded after
+     leaving the route and must not blank other pages' printouts. */
+  body:has(> .print-sheet) > *:not(.print-sheet) { display: none !important; }
+  html:has(.print-sheet), body:has(> .print-sheet) { background: white !important; overflow: visible !important; }
   .print-sheet { display: block !important; }
   .print-page {
     page-break-after: always;

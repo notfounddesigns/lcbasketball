@@ -884,12 +884,16 @@ async function applyTemplate(name: TemplateName) {
     })
     if (!ok) return
   }
+  // Templates are laid out for a half court (basket at the top). On a full
+  // court, place them in the left half attacking the left basket: distance
+  // from the baseline becomes x, and sideline-to-sideline becomes y.
+  const full = props.modelValue.courtType === 'full'
   commit(TEMPLATES[name].map((pos) => ({
     id: crypto.randomUUID(),
     type: 'marker' as const,
     color: '#37b6c4',
     width: 3,
-    at: { x: pos.x, y: pos.y },
+    at: full ? { x: (pos.y * 470) / 940, y: pos.x } : { x: pos.x, y: pos.y },
     label: pos.label,
     team: pos.type,
   })))

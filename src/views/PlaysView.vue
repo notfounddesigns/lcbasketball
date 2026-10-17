@@ -135,6 +135,12 @@ function phaseCount(p: Play): number {
 
 // ---- inline preview (animate diagram + play attached clips) ----
 const previewPlay = ref<Play | null>(null)
+const previewMode = ref<'diagram' | 'video'>('diagram')
+
+function openPreview(p: Play, mode: 'diagram' | 'video') {
+  previewMode.value = mode
+  previewPlay.value = p
+}
 
 // ---- drag-to-reorder (localStorage) ----
 const STORAGE_KEY = 'lc-plays-order'
@@ -144,15 +150,17 @@ function loadCustomOrder(): string[] {
 const customOrder = ref<string[]>(loadCustomOrder())
 const draggingId = ref<string | null>(null)
 
-const sortedFiltered = computed(() => {
+function sortByCustomOrder(list: Play[]): Play[] {
   const orderMap = new Map(customOrder.value.map((id, i) => [id, i]))
-  return [...filteredPlays.value].sort((a, b) => {
+  return [...list].sort((a, b) => {
     const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity
     const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity
     // Both unknown → keep original order from server (updated_at desc)
     return ai === Infinity && bi === Infinity ? 0 : ai - bi
   })
-})
+}
+
+const sortedFiltered = computed(() => sortByCustomOrder(filteredPlays.value))
 
 function onDragStart(e: DragEvent, p: Play) {
   draggingId.value = p.id
@@ -168,8 +176,13 @@ function onDragOver(e: DragEvent, target: Play) {
   if (from === -1 || to === -1) return
   ids.splice(from, 1)
   ids.splice(to, 0, draggingId.value)
-  customOrder.value = ids
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
+  // Only the visible plays moved: write them back into the slots they hold in
+  // the full order so other categories keep their saved order.
+  const visible = new Set(ids)
+  let next = 0
+  const full = sortByCustomOrder(plays.value).map((p) => (visible.has(p.id) ? ids[next++] : p.id))
+  customOrder.value = full
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(full))
 }
 
 function onDragEnd() {
@@ -287,14 +300,14 @@ function onDragEnd() {
               <button
                 v-if="phaseCount(p) > 1"
                 class="inline-flex rounded bg-ink-700 px-1.5 py-0.5 text-[11px] text-ink-400"
-                @click="previewPlay = p, previewPlay.default_preview_mode = 'diagram'">
+                @click="openPreview(p, 'diagram')">
                 {{ phaseCount(p) }} phases
               </button>
               <button
                 v-if="p.videos?.length"
                 class="inline-flex rounded bg-ink-700 px-1.5 py-0.5 text-[11px] text-ink-500"
                 title="Preview clips"
-                @click="previewPlay = p, previewPlay.default_preview_mode = 'video'">
+                @click="openPreview(p, 'video')">
                 <PlayIcon class="h-4 w-4" />{{ p.videos.length }}
               </button>
             </div>
@@ -306,7 +319,7 @@ function onDragEnd() {
             <button
               class="btn-ghost py-1.5 text-xs"
               title="Preview"
-              @click="previewPlay = p, previewPlay.default_preview_mode = p.videos?.length ? 'video' : 'diagram'">
+              @click="openPreview(p, p.videos?.length ? 'video' : 'diagram')">
               <PlayIcon class="h-4 w-4" />
             </button>
             <button class="btn-ghost py-1.5 text-xs" title="Open editor" @click="router.push(`/plays/${p.id}`)">
@@ -329,7 +342,7 @@ function onDragEnd() {
       :name="previewPlay.name"
       :diagram="previewPlay.diagram"
       :videos="previewPlay.videos"
-      :default_preview_mode="previewPlay.default_preview_mode"
+      :default_preview_mode="previewMode"
       @close="previewPlay = null"
     />
   </section>

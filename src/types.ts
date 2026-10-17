@@ -73,7 +73,6 @@ export interface Play {
   created_at: string
   updated_at: string
   videos?: PlayVideo[]
-  default_preview_mode?: 'diagram' | 'video'
 }
 
 export type PlayDraft = Omit<Play, 'id' | 'created_at' | 'updated_at' | 'videos'>

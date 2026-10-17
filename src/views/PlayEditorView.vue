@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import type { Diagram, DiagramElement, MarkerElement, PlayDraft } from '@/types'
 import { usePlays } from '@/composables/usePlays'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useStats } from '@/composables/useStats'
 import { PLAY_CATEGORIES, resolveCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
@@ -15,6 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const { plays, error: playsError, fetchPlays, createPlay, updatePlay } = usePlays()
 const { toast } = useToast()
+const { confirm } = useConfirm()
 const { players, fetchPlayers } = useStats()
 const rosterPlayers = computed(() => players.value.filter((p) => p.active !== false))
 
@@ -172,11 +174,42 @@ function exportPng() {
   canvasRef.value?.exportPng(`${form.name || 'play'}${phaseSuffix}.png`)
 }
 
-// Populate form when play data arrives (handles direct-URL navigation)
+// ---------- unsaved changes ----------
+// What the form looked like when it was last loaded or saved; anything else is
+// unsaved work. court_type is left out because it mirrors diagram.courtType.
+function snapshot(): string {
+  const { name, description, category, diagram, is_scouting } = form
+  return JSON.stringify({ name, description, category, diagram, is_scouting })
+}
+const savedSnapshot = ref(snapshot())
+const isDirty = computed(() => snapshot() !== savedSnapshot.value)
+
+onBeforeRouteLeave(async () => {
+  if (!isDirty.value) return true
+  return confirm({
+    title: 'Unsaved changes',
+    message: 'Leave without saving your changes to this play?',
+    confirmText: 'Leave',
+    cancelText: 'Keep editing',
+    tone: 'danger',
+  })
+})
+
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (isDirty.value) e.preventDefault()
+}
+window.addEventListener('beforeunload', onBeforeUnload)
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
+
+// Populate the form when a play loads (handles direct-URL navigation). Keyed on
+// the id, not the object: saving replaces the store object, and reloading then
+// would jump back to phase 1 and drop strokes drawn while the save was in flight.
+let loadedId: string | null = null
 watch(
   play,
   (p) => {
-    if (p) {
+    if (p && p.id !== loadedId) {
+      loadedId = p.id
       form.name = p.name
       form.description = p.description ?? ''
       form.category = p.category ?? ''
@@ -184,6 +217,7 @@ watch(
       form.diagram = JSON.parse(JSON.stringify(p.diagram)) as Diagram
       form.is_scouting = p.is_scouting
       activePhase.value = 0 // reset to phase 1 when play changes
+      savedSnapshot.value = snapshot()
     }
   },
   { immediate: true },
@@ -198,15 +232,23 @@ watch(
 async function save() {
   if (!form.name.trim()) return
   saving.value = true
+  // Taken before the request so edits made while it's in flight stay unsaved.
+  const sent = snapshot()
   try {
     if (playId.value) {
-      const updated = await updatePlay(playId.value, { ...form })
-      if (updated) toast('Play saved')
+      const updated = await updatePlay(playId.value, JSON.parse(JSON.stringify(form)))
+      if (updated) {
+        savedSnapshot.value = sent
+        toast('Play saved')
+      }
       else toast(playsError.value ?? 'Could not save play', 'error')
     } else {
-      const created = await createPlay({ ...form })
+      const created = await createPlay(JSON.parse(JSON.stringify(form)))
       if (!created) toast(playsError.value ?? 'Could not create play', 'error')
       if (created) {
+        // The form is already the source of this play — don't reload it.
+        loadedId = created.id
+        savedSnapshot.value = sent
         toast('Play created')
         showDetails.value = false
         // Swap to edit route so the video section becomes available
