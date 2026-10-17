@@ -42,7 +42,7 @@
 40. - [ ] Share a play read-only — PNG/PDF via the Web Share API on iPad, or a share link
 41. - [ ] Save whiteboard sketches as a new play (`WhiteboardView` has no persistence)
 42. - [ ] Per-phase notes / captions, and link related plays as counters/variants
-43. - [ ] Duplicate a practice plan or save it as a template
+43. - [x] Duplicate a practice plan or save it as a template — Duplicate opens the plan editor on a copy (today's date, same blocks/notes/times; clips aren't copied)
 44. - [ ] Drill library with default durations and coaching points, separate from plays
 45. - [ ] Drag-to-reorder practice blocks (arrows only today)
 46. - [ ] Practice calendar/week view and a "Today's plan" shortcut
@@ -136,12 +136,12 @@
 11. - [x] Stat tap buttons on the tracker are small and easy to miss-tap during a live game — consider larger tap targets or a compact "scoreboard" layout optimized for one-handed use on a phone
 12. - [x] Shot chart markers should use both color AND shape to distinguish 2pt/3pt/miss (colorblind-friendly) — e.g. circle for made, X for miss already done, but 2pt vs 3pt rely on color alone
 13. - [ ] Animate player movement between phases in the play animator (markers keep ids across phases, so positions can be tweened); when adding a phase, move players to the head of their arrows
-14. - [ ] Copy/duplicate a phase and reorder phase tabs
+14. - [x] Copy/duplicate a phase and reorder phase tabs
 15. - [ ] Defensive formation presets (2-3, 1-3-1, man) alongside the offensive templates
 16. - [x] Show play notes on every page of the print sheet
 17. - [x] Give the eraser its own icon (it currently shares the trash icon with "Clear all")
-18. - [ ] Proper dialog behaviour for modals — Escape to close, focus trap/return, `role="dialog"`/`aria-labelledby` (PracticePlanModal, PracticePlanViewer, ConfirmDialog)
-19. - [ ] Re-enable pinch zoom outside the court canvas (`user-scalable=no` fails WCAG 1.4.4)
+18. - [x] Proper dialog behaviour for modals — Escape to close, focus trap/return, `role="dialog"`/`aria-labelledby` (PracticePlanModal, PracticePlanViewer, ConfirmDialog)
+19. - [x] Re-enable pinch zoom outside the court canvas (`user-scalable=no` fails WCAG 1.4.4)
 20. - [ ] "New version available" prompt for the PWA — `autoUpdate` leaves open tabs on old code
 21. - [ ] Drag-to-reorder plays may not work on iPhone (HTML5 drag-and-drop) — use a pointer-based sort
 
@@ -157,7 +157,7 @@
 
 # Tooling
 
-1. - [ ] Add unit tests (Vitest) for the pure helpers — `stats-utils.ts`, `practice-utils.ts`, `diagram-utils.ts`
+1. - [x] Add unit tests (Vitest) for the pure helpers — `stats-utils.ts`, `practice-utils.ts`, `diagram-utils.ts`
 2. - [ ] Add ESLint + Prettier, and run typecheck, lint and tests on pull requests (CI only builds and deploys today)
 3. - [ ] Move `supabase/schema.sql` to Supabase CLI migrations; add `updated_at` to `practice_plans`
 4. - [ ] Persist play order in the database (`sort_order` column) instead of localStorage so it follows the coach across devices

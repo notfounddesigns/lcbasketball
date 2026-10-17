@@ -4,6 +4,7 @@ import type { PracticePlan, PracticePlanVideo, TimeBlockDraft } from '@/types'
 import { usePlays } from '@/composables/usePlays'
 import { usePracticePlan } from '@/composables/usePracticePlan'
 import { useConfirm } from '@/composables/useConfirm'
+import { useDialog } from '@/composables/useDialog'
 import {
   addMinutesToTime,
   blockRanges,
@@ -17,8 +18,9 @@ import CourtCanvas from '@/components/CourtCanvas.vue'
 import { randomQuote } from '@/lib/quotes'
 import { ArrowDownIcon, ArrowPathIcon, ArrowUpIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
-// `plan` present = edit an existing plan; absent = create a new one.
-const props = defineProps<{ plan?: PracticePlan | null }>()
+// `plan` present = edit an existing plan; absent = create a new one, starting
+// from `source`'s blocks, notes and times when duplicating.
+const props = defineProps<{ plan?: PracticePlan | null; source?: PracticePlan | null }>()
 const emit = defineEmits<{ close: []; saved: [plan: PracticePlan] }>()
 
 const { plays, fetchPlays } = usePlays()
@@ -36,11 +38,13 @@ function emptyBlock(): EditorBlock {
 }
 
 const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local
-const name = ref(props.plan?.name ?? '')
+// A copy is a new practice, so it takes today's date rather than the original's.
+const from = props.plan ?? props.source ?? null
+const name = ref(from?.name ?? '')
 const date = ref(props.plan?.planned_for ?? today)
-const startTime = ref(toTimeInput(props.plan?.start_time))
-const endTime = ref(toTimeInput(props.plan?.end_time))
-const notes = ref(props.plan?.notes ?? '')
+const startTime = ref(toTimeInput(from?.start_time))
+const endTime = ref(toTimeInput(from?.end_time))
+const notes = ref(from?.notes ?? '')
 
 // New plans start with a random sports quote; an existing plan keeps whatever it
 // was saved with (including none). Either way it's plain text the coach can edit.
@@ -55,9 +59,9 @@ function regenerateQuote() {
 }
 
 const blocks = ref<EditorBlock[]>(
-  props.plan?.items?.length
-    ? props.plan.items.map((i) => ({
-        key: i.id,
+  from?.items?.length
+    ? from.items.map((i) => ({
+        key: crypto.randomUUID(),
         label: i.label ?? '',
         duration_min: i.duration_min,
         play_id: i.play_id,
@@ -85,8 +89,12 @@ function snapshot(): string {
   })
 }
 // Taken after setup so the start-time watcher's end-time fill doesn't count.
+// A duplicate is unsaved from the start, so closing it always asks.
 let initialSnapshot = ''
-onMounted(() => { initialSnapshot = snapshot() })
+onMounted(() => { initialSnapshot = props.source && !props.plan ? '' : snapshot() })
+
+const dialogEl = ref<HTMLElement | null>(null)
+useDialog(dialogEl, () => requestClose())
 
 async function requestClose() {
   if (busy.value) return
@@ -257,19 +265,25 @@ async function onSubmit() {
 <template>
   <Teleport to="body">
     <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" @click.self="requestClose">
-      <div class="card my-4 w-full max-w-2xl overflow-y-hidden border-ink-700 shadow-2xl" role="dialog" aria-modal="true">
+      <div
+        ref="dialogEl"
+        class="card my-4 w-full max-w-2xl overflow-y-hidden border-ink-700 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="plan-modal-title"
+      >
         <!-- header -->
         <header class="flex items-center justify-between gap-3 border-b border-ink-700/60 px-5 py-4">
           <div>
-            <h2 class="font-stencil text-xl font-extrabold tracking-tight">
-              {{ isEdit ? 'Edit Practice Plan' : 'New Practice Plan' }}
+            <h2 id="plan-modal-title" class="font-stencil text-xl font-extrabold tracking-tight">
+              {{ isEdit ? 'Edit Practice Plan' : source ? 'Duplicate Practice Plan' : 'New Practice Plan' }}
             </h2>
             <p class="text-xs text-ink-500">
               {{ blocks.length }} block{{ blocks.length === 1 ? '' : 's' }} · {{ formatDuration(totalMins) }} total
               <span v-if="timeWindow"> · {{ timeWindow }}</span>
             </p>
           </div>
-          <button class="btn-ghost px-2 py-1.5" title="Close" :disabled="busy" @click="requestClose">
+          <button class="btn-ghost px-2 py-1.5" title="Close" aria-label="Close" :disabled="busy" @click="requestClose">
             <XMarkIcon class="h-5 w-5" />
           </button>
         </header>

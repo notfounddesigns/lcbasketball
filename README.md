@@ -80,6 +80,7 @@ VITE_SUPABASE_ANON_KEY=<anon public key>
 npm run dev      # http://localhost:5173
 npm run build    # typecheck + production build to dist/
 npm run preview  # serve the built bundle
+npm test         # unit tests for the pure helpers in src/lib (Vitest)
 ```
 
 If the env vars are missing, the app loads but shows a "Supabase not configured"
