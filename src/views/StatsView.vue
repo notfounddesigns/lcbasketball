@@ -597,6 +597,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', measureTracker)
 })
 
+// A column the app expects is missing from the database (Supabase's
+// "Could not find the 'x' column … in the schema cache").
+const needsMigration = computed(() => /schema cache|column .* does not exist/i.test(error.value ?? ''))
+
 // ----- scouting reports -----
 const showScoutNotes = ref(false)
 const notesGame = computed(() => activeGame.value?.is_scouting ? activeGame.value : viewingScout.value)
@@ -815,9 +819,18 @@ watch(
     </div>
     <hr class="h-[2px] bg-ink-700/60 border-0 rounded-lg" />
 
-    <p v-if="error" class="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-      {{ error }}
-    </p>
+    <div v-if="error" class="flex items-start gap-3 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300" role="alert">
+      <p class="grow">
+        {{ error }}
+        <span v-if="needsMigration" class="mt-1 block text-red-200/80">
+          The database is missing a recent update — run the newest migration at the end of
+          <code class="font-mono">supabase/schema.sql</code> in the Supabase SQL Editor.
+        </span>
+      </p>
+      <button class="shrink-0 rounded p-0.5 hover:bg-red-500/20 hover:text-red-200" title="Dismiss" aria-label="Dismiss error" @click="error = null">
+        <XMarkIcon class="h-5 w-5" />
+      </button>
+    </div>
 
     <!-- ==================== GAME MODE ==================== -->
     <template v-if="mode === 'game' || inGame">
@@ -1185,12 +1198,12 @@ watch(
               @keyup.enter="onSubmitGameSheet"
             />
           </div>
-          <div class="flex gap-3">
-            <div class="grow">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="min-w-0">
               <label class="label" for="ng-date">{{ sheetIsScout ? 'Date played' : 'Date' }}</label>
-              <input id="ng-date" v-model="sheetDate" type="date" class="input" />
+              <input id="ng-date" v-model="sheetDate" type="date" class="input min-w-0" />
             </div>
-            <div class="grow">
+            <div class="min-w-0">
               <label class="label" for="ng-location">Location (optional)</label>
               <input id="ng-location" v-model="sheetLocation" class="input" placeholder="Home, Away, gym…" autocomplete="off" />
             </div>

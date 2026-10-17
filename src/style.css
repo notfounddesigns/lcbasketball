@@ -78,6 +78,19 @@ input[type='number']::-webkit-inner-spin-button {
   @apply w-full rounded-xl border border-ink-600 bg-ink-800 px-3 py-2.5 text-sm text-chalk
     placeholder:text-ink-500 focus:border-ink-500 focus:outline-none;
 }
+/* iOS Safari gives date/time inputs an intrinsic minimum width that ignores
+   their container, so side-by-side fields overlap on iPad. Let them shrink
+   and keep the value left-aligned like the other inputs. */
+.input[type='date'],
+.input[type='time'] {
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.input[type='date']::-webkit-date-and-time-value,
+.input[type='time']::-webkit-date-and-time-value {
+  text-align: left;
+}
 .label {
   @apply mb-1.5 block text-xs font-semibold uppercase tracking-widest text-ink-500;
 }
@@ -191,4 +204,6 @@ input[type='number']::-webkit-inner-spin-button {
 .scout-shotchart .shotchart {
   height: auto;
   aspect-ratio: 500 / 470;
+  /* Leave room for the tab bar so the legend never sits under it. */
+  max-height: max(320px, calc(100dvh - 330px));
 }

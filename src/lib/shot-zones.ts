@@ -13,6 +13,21 @@ const PAINT_DEPTH = 246 // baseline to free-throw line
 const THREE_R = 237
 const THREE_CORNER_X = 44
 const THREE_ARC_Y = 182
+const BOUNDARY = 6
+// The drawn three-point arc runs from the bottom of one corner line to the
+// other, so its centre sits a little below the basket.
+const THREE_CY = THREE_ARC_Y - Math.sqrt(THREE_R ** 2 - (BASKET_X - THREE_CORNER_X) ** 2)
+
+/** Inside the three-point line, exactly as it's drawn on the chart (SVG units). */
+function insideArc(x: number, y: number) {
+  if (x <= THREE_CORNER_X || x >= VB_W - THREE_CORNER_X) return false
+  return y <= THREE_ARC_Y || Math.hypot(x - BASKET_X, y - THREE_CY) <= THREE_R
+}
+
+/** Whether a shot at this normalised (0..1) position is a three. */
+export function isThreeAt(nx: number, ny: number): boolean {
+  return !insideArc(nx * VB_W, ny * VB_H)
+}
 
 export type ZoneId =
   | 'rim' | 'paint'
@@ -54,8 +69,7 @@ function angleFromBasket(x: number, y: number) {
 export function zoneAtSvg(x: number, y: number): ZoneId {
   const dist = Math.hypot(x - BASKET_X, y - BASKET_Y)
   const a = angleFromBasket(x, y)
-  const three = x <= THREE_CORNER_X || x >= VB_W - THREE_CORNER_X || dist > THREE_R
-  if (three) {
+  if (!insideArc(x, y)) {
     if (y <= THREE_ARC_Y && x <= THREE_CORNER_X) return 'c3_l'
     if (y <= THREE_ARC_Y && x >= VB_W - THREE_CORNER_X) return 'c3_r'
     return a < -THREE_TOP ? 'w3_l' : a > THREE_TOP ? 'w3_r' : 't3'
@@ -75,45 +89,87 @@ export function zoneOf(shot: Pick<ShotEvent, 'x' | 'y'>): ZoneId {
 }
 
 // ---------- drawable zone shapes ----------
-// Each zone is rasterised once into a single SVG path of horizontal runs on a
-// fine grid: exact enough to read at any chart size, and no polygon maths for
-// the arc/ray intersections.
-const STEP = 2
+// Zones are drawn as vector shapes so their edges are as smooth as the court
+// lines. Mid-range and three-point zones are wedges from the basket, cut to the
+// right area by a mask (see ShotChart): 'mid' keeps inside the arc minus the
+// paint, 'three' keeps outside the arc minus the corners. The whole layer is
+// clipped to the court.
+export type ZoneMask = 'mid' | 'three' | null
 
-export interface ZoneShape { id: ZoneId; path: string; cx: number; cy: number }
+export interface ZoneShape {
+  id: ZoneId
+  path: string
+  mask: ZoneMask
+  evenOdd?: boolean
+  cx: number // label position
+  cy: number
+}
 
-function buildShapes(): ZoneShape[] {
-  const parts = new Map<ZoneId, string[]>()
-  const sums = new Map<ZoneId, { x: number; y: number; n: number }>()
-  for (const z of ZONES) {
-    parts.set(z.id, [])
-    sums.set(z.id, { x: 0, y: 0, n: 0 })
-  }
-  for (let y = 0; y < VB_H; y += STEP) {
-    let runStart = 0
-    let runZone = zoneAtSvg(STEP / 2, y + STEP / 2)
-    for (let x = STEP; x <= VB_W; x += STEP) {
-      const zone = x < VB_W ? zoneAtSvg(x + STEP / 2, y + STEP / 2) : null
-      if (zone === runZone) continue
-      parts.get(runZone)!.push(`M${runStart} ${y}h${x - runStart}v${STEP}h${runStart - x}z`)
-      const s = sums.get(runZone)!
-      const cells = (x - runStart) / STEP
-      s.x += ((runStart + x) / 2) * cells
-      s.y += (y + STEP / 2) * cells
-      s.n += cells
-      runStart = x
-      if (zone) runZone = zone
+const fmt = (n: number) => Math.round(n * 100) / 100
+
+function wedge(fromDeg: number, toDeg: number): string {
+  const R = 900 // far past the court; the clip trims it
+  const pts: string[] = [`M${BASKET_X} ${BASKET_Y}`]
+  for (let d = fromDeg; d < toDeg; d += 15) pts.push(pointAt(d, R))
+  pts.push(pointAt(toDeg, R))
+  return pts.join('L') + 'Z'
+}
+function pointAt(deg: number, r: number) {
+  const rad = (deg * Math.PI) / 180
+  return `${fmt(BASKET_X + r * Math.sin(rad))} ${fmt(BASKET_Y + r * Math.cos(rad))}`
+}
+const rect = (x: number, y: number, w: number, h: number) => `M${x} ${y}h${w}v${h}h${-w}Z`
+const circle = (cx: number, cy: number, r: number) =>
+  `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`
+
+/** The court inside its boundary line. */
+export const COURT_PATH = rect(BOUNDARY, BOUNDARY, VB_W - 2 * BOUNDARY, VB_H - 2 * BOUNDARY)
+/** Everything inside the three-point line. */
+export const ARC_PATH =
+  `M${THREE_CORNER_X} ${BOUNDARY}V${THREE_ARC_Y}` +
+  `A${THREE_R} ${THREE_R} 0 0 0 ${VB_W - THREE_CORNER_X} ${THREE_ARC_Y}V${BOUNDARY}Z`
+export const PAINT_PATH = rect(BASKET_X - PAINT_HALF_W, BOUNDARY, PAINT_HALF_W * 2, PAINT_DEPTH - BOUNDARY)
+/** The two corner-three boxes (outside the corner lines, below the arc's start). */
+export const CORNERS_PATH =
+  rect(0, 0, THREE_CORNER_X, THREE_ARC_Y) + rect(VB_W - THREE_CORNER_X, 0, THREE_CORNER_X, THREE_ARC_Y)
+
+const SHAPE_PATHS: Record<ZoneId, { path: string; mask: ZoneMask; evenOdd?: boolean }> = {
+  rim: { path: circle(BASKET_X, BASKET_Y, RIM_R), mask: null },
+  paint: { path: PAINT_PATH + circle(BASKET_X, BASKET_Y, RIM_R), mask: null, evenOdd: true },
+  mid_l_base: { path: wedge(-180, -MID_WING), mask: 'mid' },
+  mid_l_wing: { path: wedge(-MID_WING, -MID_TOP), mask: 'mid' },
+  mid_top: { path: wedge(-MID_TOP, MID_TOP), mask: 'mid' },
+  mid_r_wing: { path: wedge(MID_TOP, MID_WING), mask: 'mid' },
+  mid_r_base: { path: wedge(MID_WING, 180), mask: 'mid' },
+  c3_l: { path: rect(0, 0, THREE_CORNER_X, THREE_ARC_Y), mask: null },
+  w3_l: { path: wedge(-180, -THREE_TOP), mask: 'three' },
+  t3: { path: wedge(-THREE_TOP, THREE_TOP), mask: 'three' },
+  w3_r: { path: wedge(THREE_TOP, 180), mask: 'three' },
+  c3_r: { path: rect(VB_W - THREE_CORNER_X, 0, THREE_CORNER_X, THREE_ARC_Y), mask: null },
+}
+
+// Label positions: the centre of each zone's in-court area, found by sampling.
+function centroids(): Map<ZoneId, { cx: number; cy: number }> {
+  const sums = new Map<ZoneId, { x: number; y: number; n: number }>(ZONES.map((z) => [z.id, { x: 0, y: 0, n: 0 }]))
+  const STEP = 4
+  for (let y = BOUNDARY + STEP / 2; y < VB_H - BOUNDARY; y += STEP) {
+    for (let x = BOUNDARY + STEP / 2; x < VB_W - BOUNDARY; x += STEP) {
+      const s = sums.get(zoneAtSvg(x, y))!
+      s.x += x
+      s.y += y
+      s.n++
     }
   }
-  return ZONES.map((z) => {
-    const s = sums.get(z.id)!
-    return { id: z.id, path: parts.get(z.id)!.join(''), cx: s.x / s.n, cy: s.y / s.n }
-  })
+  return new Map([...sums].map(([id, s]) => [id, { cx: s.x / s.n, cy: s.y / s.n }]))
 }
 
 let shapes: ZoneShape[] | null = null
 export function zoneShapes(): ZoneShape[] {
-  return (shapes ??= buildShapes())
+  if (!shapes) {
+    const c = centroids()
+    shapes = ZONES.map((z) => ({ id: z.id, ...SHAPE_PATHS[z.id], ...c.get(z.id)! }))
+  }
+  return shapes
 }
 
 // Boundary lines between zones that the court markings don't already draw
@@ -123,24 +179,30 @@ export function zoneDividers(): { x1: number; y1: number; x2: number; y2: number
     x: BASKET_X + r * Math.sin((deg * Math.PI) / 180),
     y: BASKET_Y + r * Math.cos((deg * Math.PI) / 180),
   })
-  const outsidePaint = (p: { x: number; y: number }) =>
-    Math.abs(p.x - BASKET_X) > PAINT_HALF_W || p.y > PAINT_DEPTH
+  const inPaint = (p: { x: number; y: number }) =>
+    Math.abs(p.x - BASKET_X) <= PAINT_HALF_W && p.y <= PAINT_DEPTH
+  const inCourt = (p: { x: number; y: number }) =>
+    p.x >= BOUNDARY && p.x <= VB_W - BOUNDARY && p.y >= BOUNDARY && p.y <= VB_H - BOUNDARY
   const lines: { x1: number; y1: number; x2: number; y2: number }[] = []
   for (const deg of [-MID_WING, -MID_TOP, MID_TOP, MID_WING]) {
     let r = RIM_R
-    while (!outsidePaint(ray(deg, r)) && r < THREE_R) r += 1
+    while (inPaint(ray(deg, r))) r += 0.5
     const a = ray(deg, r)
-    const b = ray(deg, THREE_R)
+    while (insideArc(ray(deg, r).x, ray(deg, r).y)) r += 0.5
+    const b = ray(deg, r)
     lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y })
   }
   for (const deg of [-THREE_TOP, THREE_TOP]) {
-    const a = ray(deg, THREE_R)
-    const b = ray(deg, 400)
+    let r = THREE_R - 20
+    while (insideArc(ray(deg, r).x, ray(deg, r).y)) r += 0.5
+    const a = ray(deg, r)
+    while (inCourt(ray(deg, r))) r += 0.5
+    const b = ray(deg, r - 0.5)
     lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y })
   }
   // Corner threes end where the arc starts.
-  lines.push({ x1: 6, y1: THREE_ARC_Y, x2: THREE_CORNER_X, y2: THREE_ARC_Y })
-  lines.push({ x1: VB_W - THREE_CORNER_X, y1: THREE_ARC_Y, x2: VB_W - 6, y2: THREE_ARC_Y })
+  lines.push({ x1: BOUNDARY, y1: THREE_ARC_Y, x2: THREE_CORNER_X, y2: THREE_ARC_Y })
+  lines.push({ x1: VB_W - THREE_CORNER_X, y1: THREE_ARC_Y, x2: VB_W - BOUNDARY, y2: THREE_ARC_Y })
   return lines
 }
 

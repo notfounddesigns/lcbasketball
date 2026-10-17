@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { VB_H, VB_W, ZONES, zoneAtSvg, zoneFill, zoneOf, zoneShapes, zoneStats } from '@/lib/shot-zones'
+import { VB_H, VB_W, ZONES, isThreeAt, zoneAtSvg, zoneFill, zoneOf, zoneShapes, zoneStats } from '@/lib/shot-zones'
 
 // Basket is at (250, 56) in shot-chart SVG units.
 describe('zoneAtSvg', () => {
@@ -20,6 +20,26 @@ describe('zoneAtSvg', () => {
 
   it('maps normalised shot positions onto the same zones', () => {
     expect(zoneOf({ x: 250 / VB_W, y: 70 / VB_H })).toBe('rim')
+  })
+})
+
+describe('isThreeAt', () => {
+  // The drawn arc runs (44,182) → (456,182) with radius 237, so its centre is
+  // ~(250, 64.8) and its top is at y ≈ 301.8 — not 293 (237 below the basket).
+  it('follows the drawn three-point line', () => {
+    expect(isThreeAt(250 / VB_W, 298 / VB_H)).toBe(false) // just inside the line
+    expect(isThreeAt(250 / VB_W, 305 / VB_H)).toBe(true) // just outside
+    expect(isThreeAt(40 / VB_W, 100 / VB_H)).toBe(true) // corner
+    expect(isThreeAt(50 / VB_W, 100 / VB_H)).toBe(false) // inside the corner line
+  })
+
+  it('agrees with the zone a shot lands in', () => {
+    for (let y = 10; y < VB_H; y += 7) {
+      for (let x = 10; x < VB_W; x += 7) {
+        const kind = ZONES.find((z) => z.id === zoneAtSvg(x, y))!.kind
+        expect(isThreeAt(x / VB_W, y / VB_H)).toBe(kind === 'three')
+      }
+    }
   })
 })
 
@@ -52,7 +72,10 @@ describe('zoneShapes', () => {
     const shapes = zoneShapes()
     expect(shapes.map((s) => s.id)).toEqual(ZONES.map((z) => z.id))
     for (const s of shapes) {
-      expect(s.path.length).toBeGreaterThan(0)
+      expect(s.path).toMatch(/^M/)
+      expect(s.mask).toBe(
+        ZONES.find((z) => z.id === s.id)!.kind === 'mid' ? 'mid' : s.id.startsWith('w3') || s.id === 't3' ? 'three' : null,
+      )
       expect(s.cx).toBeGreaterThan(0)
       expect(s.cx).toBeLessThan(VB_W)
       expect(s.cy).toBeGreaterThan(0)
