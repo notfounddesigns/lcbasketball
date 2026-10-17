@@ -2,20 +2,33 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useShotChart } from '@/composables/useShotChart'
 import { useStats } from '@/composables/useStats'
-import type { StatType, ShotEvent } from '@/types'
+import type { StatType, ShotEvent, StatEvent } from '@/types'
 import { TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { periodLabel } from '@/lib/stats-utils'
+import { HEAT_SCALE, ZONES, zoneDividers, zoneFill, zoneShapes, zoneStats } from '@/lib/shot-zones'
 
 const props = defineProps<{
-  gameId: string
+  // The game whose shots are loaded and recorded; null when the chart shows
+  // shots passed in (a season or a scouted team across several games).
+  gameId: string | null
   playerId: string | null
   period: number
   // View-only (a finished scouting report): no adding or deleting shots.
   readonly?: boolean
+  shotsSource?: ShotEvent[]
+  eventsSource?: StatEvent[]
+  defaultView?: 'shots' | 'zones'
 }>()
 
 const { shots, fetchShots, recordShot, deleteShot } = useShotChart()
 const { events, recordStat, deleteStatEvent } = useStats()
+
+const chartShots = computed(() => props.shotsSource ?? shots.value)
+const chartEvents = computed(() => props.eventsSource ?? events.value)
+const canEdit = computed(() => !props.readonly && !props.shotsSource && !!props.gameId)
+
+// Markers for every shot, or the zone heat map.
+const view = ref<'shots' | 'zones'>(props.defaultView ?? 'shots')
 
 // Court geometry — must match CourtCanvas.vue's half-court (10 SVG units = 1 foot, NFHS)
 const VB_W = 500
@@ -41,7 +54,7 @@ const selectedShot = computed(() => shots.value.find((s) => s.id === selectedSho
 // score can follow the same filter.
 // Q1–Q4 and OT always; extra overtimes appear once stats exist in them.
 const PERIOD_FILTERS = computed<{ label: string; value: number | 'all' }[]>(() => {
-  const last = Math.max(5, props.period, ...shots.value.map((s) => s.period), ...events.value.map((e) => e.period ?? 1))
+  const last = Math.max(5, props.period, ...chartShots.value.map((s) => s.period), ...chartEvents.value.map((e) => e.period ?? 1))
   return [
     { label: 'All', value: 'all' },
     ...Array.from({ length: last }, (_, i) => ({ label: periodLabel(i + 1), value: i + 1 })),
@@ -52,7 +65,7 @@ const periodFilter = defineModel<number | 'all'>('filter', { default: 'all' })
 watch(() => props.gameId, (id) => {
   selectedShotId.value = null
   periodFilter.value = 'all'
-  if (id) fetchShots(id)
+  if (id && !props.shotsSource) fetchShots(id)
 }, { immediate: true })
 
 // ---------- court ↔ element geometry ----------
@@ -89,6 +102,19 @@ onMounted(() => {
 
 onBeforeUnmount(() => resizeObs?.disconnect())
 
+// ---------- zone heat map ----------
+const ZONE_SHAPES = zoneShapes()
+const ZONE_DIVIDERS = zoneDividers()
+const ZONE_LABEL = new Map(ZONES.map((z) => [z.id, z.label]))
+const zoneData = computed(() => {
+  const stats = zoneStats(displayShots.value)
+  const maxAtt = Math.max(0, ...[...stats.values()].map((z) => z.att))
+  return ZONE_SHAPES.map((shape) => {
+    const stat = stats.get(shape.id)!
+    return { ...shape, stat, fill: zoneFill(stat, maxAtt), label: ZONE_LABEL.get(shape.id)! }
+  })
+})
+
 // The legend sits in the court's bottom-left corner (the backcourt side,
 // where shots are rare), wherever the letterboxed court ends up.
 const legendPos = computed(() => {
@@ -113,7 +139,7 @@ const selectedShotOffset = computed(() => popupOffset(selectedShot.value))
 
 // Filter displayed shots by selected player and period (or show all)
 const displayShots = computed<ShotEvent[]>(() =>
-  shots.value.filter((s) =>
+  chartShots.value.filter((s) =>
     (!props.playerId || s.player_id === props.playerId) &&
     (periodFilter.value === 'all' || s.period === periodFilter.value),
   ),
@@ -138,7 +164,7 @@ const threeFGSummary = computed(() => {
 // Free throws have no court position, so their line comes from the stat log,
 // filtered the same way as the markers (selected player, period).
 const ftSummary = computed(() => {
-  const fts = events.value.filter((e) =>
+  const fts = chartEvents.value.filter((e) =>
     (e.stat === 'ft_made' || e.stat === 'ft_miss') &&
     (!props.playerId || e.player_id === props.playerId) &&
     (periodFilter.value === 'all' || e.period === periodFilter.value),
@@ -204,7 +230,7 @@ const shotTypeLabel = computed(() => {
 })
 
 function onCourtClick(e: MouseEvent) {
-  if (props.readonly) return
+  if (!canEdit.value) return
   if (selectedShotId.value) {
     selectedShotId.value = null
     return
@@ -267,7 +293,7 @@ function cancelPending() {
 }
 
 function onShotClick(shot: ShotEvent) {
-  if (props.readonly) return
+  if (!canEdit.value) return
   pendingShot.value = null
   selectedShotId.value = selectedShotId.value === shot.id ? null : shot.id
 }
@@ -337,23 +363,62 @@ function shotPath(shot: ShotEvent): string {
 
     <!-- Court SVG -->
     <div class="shotchart-court relative w-full">
+      <!-- Legend + Shots/Zones toggle, in the court's bottom-left corner -->
       <div
         :style="legendPos"
-        class="pointer-events-none absolute z-10 flex items-center gap-2.5 rounded-md bg-ink-900/80 px-2 py-1 text-[11px] text-ink-500"
-        :title="readonly ? undefined : playerId ? 'Tap the court to add a shot' : 'Select a player to add shots'"
+        class="absolute z-10 flex items-center gap-2.5 rounded-md bg-ink-900/85 py-0.5 pl-0.5 pr-2 text-[11px] text-ink-500"
+        :title="!canEdit ? undefined : playerId ? 'Tap the court to add a shot' : 'Select a player to add shots'"
       >
-        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
-        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
-        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
+        <span class="flex rounded bg-ink-800 p-0.5" role="group" aria-label="Chart view">
+          <button
+            v-for="v in (['shots', 'zones'] as const)"
+            :key="v"
+            class="rounded px-1.5 py-0.5 font-semibold capitalize transition"
+            :class="view === v ? 'bg-ink-600 text-chalk' : 'hover:text-chalk'"
+            :aria-pressed="view === v"
+            @click.stop="view = v; selectedShotId = null; pendingShot = null"
+          >{{ v }}</button>
+        </span>
+        <template v-if="view === 'shots'">
+          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
+          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
+          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
+        </template>
+        <span
+          v-else
+          class="inline-flex items-center gap-1"
+          title="Colour: make rate against a typical rate for that shot. Shade: share of attempts."
+        >
+          Cold
+          <span v-for="h in HEAT_SCALE" :key="h.color" class="h-2.5 w-3 rounded-sm" :style="{ background: h.color }" />
+          Hot
+        </span>
       </div>
       <svg
         ref="svgRef"
         :viewBox="`0 0 ${VB_W} ${VB_H}`"
         class="w-full rounded-lg bg-ink-900 shotchart"
-        :class="playerId && !readonly ? 'cursor-crosshair' : 'cursor-default'"
+        :class="playerId && canEdit ? 'cursor-crosshair' : 'cursor-default'"
         preserveAspectRatio="xMidYMin meet"
         @click="onCourtClick"
       >
+        <!-- Zone heat map (under the court lines) -->
+        <g v-if="view === 'zones'" pointer-events="none">
+          <path
+            v-for="z in zoneData"
+            :key="z.id"
+            :d="z.path"
+            :fill="z.fill.color"
+            :fill-opacity="z.fill.opacity"
+          />
+          <line
+            v-for="(l, i) in ZONE_DIVIDERS"
+            :key="i"
+            :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2"
+            stroke="#374151" stroke-width="1" stroke-dasharray="3 3"
+          />
+        </g>
+
         <!-- Court boundary -->
         <rect :x="BOUNDARY" :y="BOUNDARY" :width="VB_W - BOUNDARY * 2" :height="VB_H - BOUNDARY * 2"
           fill="none" stroke="#374151" stroke-width="2" rx="4"/>
@@ -406,9 +471,27 @@ function shotPath(shot: ShotEvent): string {
           :d="`M ${VB_W / 2 - 40} ${BASKET_INSET} A 40 40 0 0 0 ${VB_W / 2 + 40} ${BASKET_INSET}`"
           fill="none" stroke="#374151" stroke-width="1" stroke-dasharray="4 3"/>
 
+        <!-- Zone labels: made/attempts and make rate -->
+        <g v-if="view === 'zones'" pointer-events="none" font-family="ui-monospace, monospace" text-anchor="middle">
+          <template v-for="z in zoneData" :key="z.id">
+            <text
+              v-if="z.stat.att"
+              :x="z.cx" :y="z.cy"
+              fill="#f5f5f4" stroke="#0b0b0c" stroke-width="3" paint-order="stroke"
+              font-size="15" font-weight="700"
+            ><title>{{ z.label }}: {{ z.stat.made }}/{{ z.stat.att }} ({{ z.stat.pct }}%)</title>{{ z.stat.pct }}%</text>
+            <text
+              v-if="z.stat.att"
+              :x="z.cx" :y="z.cy + 14"
+              fill="#d6d3d1" stroke="#0b0b0c" stroke-width="3" paint-order="stroke"
+              font-size="11"
+            >{{ z.stat.made }}/{{ z.stat.att }}</text>
+          </template>
+        </g>
+
         <!-- Shot markers -->
         <g
-          v-for="shot in displayShots"
+          v-for="shot in (view === 'shots' ? displayShots : [])"
           :key="shot.id"
           class="cursor-pointer"
           @click.stop="onShotClick(shot)"

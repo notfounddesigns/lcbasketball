@@ -48,5 +48,29 @@ export function useShotChart() {
     return true
   }
 
-  return { shots, error, fetchShots, recordShot, deleteShot }
+  // Shots across several games (a season, or every report on a scouted team)
+  // for the read-only charts. Returned rather than stored, so it never
+  // disturbs the open game's chart. Paged past the 1,000-row response cap.
+  async function fetchShotsForGames(gameIds: string[]): Promise<ShotEvent[]> {
+    if (!isSupabaseConfigured || !gameIds.length) return []
+    const PAGE = 1000
+    const rows: ShotEvent[] = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error: e } = await supabase
+        .from('shot_events')
+        .select('*')
+        .in('game_id', gameIds)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (e) {
+        error.value = e.message
+        return rows
+      }
+      rows.push(...((data ?? []) as ShotEvent[]))
+      if (!data || data.length < PAGE) return rows
+    }
+  }
+
+  return { shots, error, fetchShots, fetchShotsForGames, recordShot, deleteShot }
 }

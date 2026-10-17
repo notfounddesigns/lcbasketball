@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Game, Player, StatEvent, StatType } from '@/types'
+import type { Game, Player, ShotEvent, StatEvent, StatType } from '@/types'
 import { useStats } from '@/composables/useStats'
 import { useShotChart } from '@/composables/useShotChart'
 import { useConfirm } from '@/composables/useConfirm'
@@ -11,9 +11,11 @@ import ShotChart from '@/components/ShotChart.vue'
 import PlaysView from '@/views/PlaysView.vue'
 import ScoutNotesDrawer from '@/components/ScoutNotesDrawer.vue'
 import ScoutReportView from '@/components/ScoutReportView.vue'
+import ScoutTeamView from '@/components/ScoutTeamView.vue'
+import SeasonStatsTable from '@/components/SeasonStatsTable.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
-import { ArchiveBoxIcon, ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, DocumentTextIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { ArchiveBoxIcon, ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, ChartBarIcon, CheckIcon, DocumentTextIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const {
   players, scoutPlayers, games, events, allEvents, error,
@@ -22,7 +24,7 @@ const {
   createGame, updateGame, deleteGame,
   recordStat, undoLastFor,
 } = useStats()
-const { shots, deleteShot } = useShotChart()
+const { shots, deleteShot, fetchShotsForGames } = useShotChart()
 const { confirm } = useConfirm()
 const { toast } = useToast()
 
@@ -606,6 +608,7 @@ function onNotesSaved(g: Game) {
 
 async function openScoutReport(g: Game) {
   activeGame.value = null
+  viewingScoutTeam.value = null
   viewingScout.value = g
   selectedPlayerId.value = null
   await fetchEvents(g.id)
@@ -623,6 +626,37 @@ async function trackScout(g: Game) {
   await openGame(g)
 }
 
+// Every report on one scouted team, combined.
+const viewingScoutTeam = ref<string | null>(null)
+const teamReports = computed(() =>
+  viewingScoutTeam.value ? scoutReports.value.filter((g) => sameTeam(g.scouted_team, viewingScoutTeam.value)) : [],
+)
+const teamEvents = computed(() => {
+  const ids = new Set(teamReports.value.map((g) => g.id))
+  return allEvents.value.filter((e) => ids.has(e.game_id))
+})
+const teamRoster = computed(() => scoutPlayers.value.filter((p) => sameTeam(p.scout_team, viewingScoutTeam.value)))
+const teamShots = ref<ShotEvent[]>([])
+
+async function openScoutTeam(team: string) {
+  viewingScout.value = null
+  activeGame.value = null
+  viewingScoutTeam.value = team
+  teamShots.value = []
+  teamShots.value = await fetchShotsForGames(teamReports.value.map((g) => g.id))
+}
+
+// Reports grouped by team (most recently scouted team first) for the list.
+const scoutGroups = computed(() => {
+  const groups: { team: string; reports: Game[] }[] = []
+  for (const g of scoutReports.value) {
+    const group = groups.find((x) => sameTeam(x.team, g.scouted_team))
+    if (group) group.reports.push(g)
+    else groups.push({ team: g.scouted_team?.trim() || 'Unknown team', reports: [g] })
+  }
+  return groups
+})
+
 // The Scouting tab lists stat reports, with diagrammed plays on a sub-tab.
 const scoutingView = computed<'reports' | 'plays'>({
   get: () => (route.query.view === 'plays' ? 'plays' : 'reports'),
@@ -630,22 +664,21 @@ const scoutingView = computed<'reports' | 'plays'>({
 })
 
 // ----- season stats -----
-const seasonBoxScore = computed(() => buildBoxScore(rosterFor(seasonEvents.value, players.value), seasonEvents.value))
-
-// Same numbers as the season CSV (buildSeasonStats), formatted for display.
-const seasonStats = computed(() =>
-  buildSeasonStats(rosterFor(seasonEvents.value, players.value), seasonEvents.value).map((r) => ({
-    ...r,
-    ppg: r.gp ? r.ppg.toFixed(1) : '—',
-    rpg: r.gp ? r.rpg.toFixed(1) : '—',
-    apg: r.gp ? r.apg.toFixed(1) : '—',
-    fgPct: formatPct(r.fgm, r.fga),
-    tpPct: formatPct(r.tpm, r.tpa),
-    ftPct: formatPct(r.ftm, r.fta),
-  })),
-)
-const seasonTotals = computed(() => teamTotals(seasonBoxScore.value))
+const seasonStats = computed(() => buildSeasonStats(rosterFor(seasonEvents.value, players.value), seasonEvents.value))
 const seasonGames = computed(() => new Set(seasonEvents.value.map((e) => e.game_id)).size)
+
+// Season shot chart / heat map across all our games; tap a player to filter.
+const seasonShots = ref<ShotEvent[]>([])
+const seasonPlayerId = ref<string | null>(null)
+const seasonPeriod = ref<number | 'all'>('all')
+watch(
+  () => mode.value === 'season' && ourGames.value.map((g) => g.id).join(','),
+  async (key) => {
+    if (!key) return
+    seasonShots.value = await fetchShotsForGames(ourGames.value.map((g) => g.id))
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -774,7 +807,7 @@ const seasonGames = computed(() => new Set(seasonEvents.value.map((e) => e.game_
         @click="openNewGameSheet"
       ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Game</span></button>
       <button
-        v-if="mode === 'scouting' && !inGame && !viewingScout && scoutingView === 'reports'"
+        v-if="mode === 'scouting' && !inGame && !viewingScout && !viewingScoutTeam && scoutingView === 'reports'"
         class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
         title="New scouting report" aria-label="New scouting report"
         @click="openNewScoutSheet"
@@ -979,8 +1012,18 @@ const seasonGames = computed(() => new Set(seasonEvents.value.map((e) => e.game_
 
     <!-- ==================== SCOUTING ==================== -->
     <template v-else-if="mode === 'scouting'">
+      <ScoutTeamView
+        v-if="viewingScoutTeam"
+        :team="viewingScoutTeam"
+        :reports="teamReports"
+        :roster="teamRoster"
+        :events="teamEvents"
+        :shots="teamShots"
+        @back="viewingScoutTeam = null"
+        @open-report="openScoutReport"
+      />
       <ScoutReportView
-        v-if="viewingScout"
+        v-else-if="viewingScout"
         :game="viewingScout"
         :roster="rosterPool"
         :events="events"
@@ -988,6 +1031,7 @@ const seasonGames = computed(() => new Set(seasonEvents.value.map((e) => e.game_
         @track="trackScout(viewingScout)"
         @edit-details="openEditGameSheet(viewingScout)"
         @edit-notes="showScoutNotes = true"
+        @team="openScoutTeam(viewingScout.scouted_team ?? '')"
       />
       <template v-else>
         <div class="flex gap-1 self-start rounded-lg bg-ink-800 p-0.5" role="tablist">
@@ -1014,97 +1058,71 @@ const seasonGames = computed(() => new Set(seasonEvents.value.map((e) => e.game_
             <p>Track an opponent's stats from film or the stands, with notes on their personnel and schemes.</p>
             <button class="btn-primary" @click="openNewScoutSheet"><PlusIcon class="h-5 w-5" />New scouting report</button>
           </div>
-          <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div
-              v-for="g in scoutReports"
-              :key="g.id"
-              class="group relative cursor-pointer rounded-2xl border border-ink-700 bg-ink-800 p-4 transition hover:border-ink-600 hover:bg-ink-700"
-              @click="openScoutReport(g)">
-              <p class="pr-5 font-stencil font-bold leading-tight">{{ g.scouted_team }}</p>
-              <p class="mt-0.5 text-xs text-ink-400">vs {{ g.opponent }}</p>
-              <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}<template v-if="g.location"> · {{ g.location }}</template></p>
-              <p v-if="hasFinal(g)" class="mt-2 font-mono text-sm">
-                <span
-                  class="mr-1 font-bold"
-                  :class="resultLabel(g) === 'W' ? 'text-green-400' : resultLabel(g) === 'L' ? 'text-rim' : 'text-ink-400'"
-                >{{ resultLabel(g) }}</span>{{ g.our_score }}–{{ g.opp_score }}
-              </p>
-              <button
-                class="absolute right-2 top-2 rounded p-1 text-red-500 hover:text-red-300"
-                title="Delete report" aria-label="Delete report"
-                @click.stop="onDeleteGame(g)">
-                <TrashIcon class="h-4 w-4" />
+          <section v-for="grp in scoutGroups" v-else :key="grp.team" class="flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <h2 class="font-stencil text-lg font-bold uppercase">{{ grp.team }}</h2>
+              <span class="text-xs text-ink-500">{{ grp.reports.length }} report{{ grp.reports.length === 1 ? '' : 's' }}</span>
+              <button class="btn-ghost ml-auto py-1 text-xs" @click="openScoutTeam(grp.team)">
+                <ChartBarIcon class="h-4 w-4" />Team overview
               </button>
             </div>
-          </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div
+                v-for="g in grp.reports"
+                :key="g.id"
+                class="group relative cursor-pointer rounded-2xl border border-ink-700 bg-ink-800 p-4 transition hover:border-ink-600 hover:bg-ink-700"
+                @click="openScoutReport(g)">
+                <p class="pr-5 font-stencil font-bold leading-tight">vs {{ g.opponent }}</p>
+                <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}<template v-if="g.location"> · {{ g.location }}</template></p>
+                <p v-if="hasFinal(g)" class="mt-2 font-mono text-sm">
+                  <span
+                    class="mr-1 font-bold"
+                    :class="resultLabel(g) === 'W' ? 'text-green-400' : resultLabel(g) === 'L' ? 'text-rim' : 'text-ink-400'"
+                  >{{ resultLabel(g) }}</span>{{ g.our_score }}–{{ g.opp_score }}
+                </p>
+                <button
+                  class="absolute right-2 top-2 rounded p-1 text-red-500 hover:text-red-300"
+                  title="Delete report" aria-label="Delete report"
+                  @click.stop="onDeleteGame(g)">
+                  <TrashIcon class="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </section>
         </template>
       </template>
     </template>
 
     <!-- ==================== SEASON MODE ==================== -->
     <template v-else>
-      <div class="card overflow-x-auto p-4">
-        <h2 class="mb-1 font-stencil font-bold">Season Stats</h2>
-        <p class="mb-4 text-xs text-ink-500">Aggregated across all recorded games.</p>
-
-        <table class="w-full text-right font-mono text-sm">
-          <thead class="text-ink-500">
-            <tr class="border-b border-ink-700">
-              <th class="py-1 text-left">Player</th>
-              <th title="Games Played">GP</th>
-              <th>PTS</th>
-              <th title="Points per game">PPG</th>
-              <th>FG%</th><th>3P%</th><th>FT%</th>
-              <th>REB</th>
-              <th title="Rebounds per game">RPG</th>
-              <th>AST</th>
-              <th title="Assists per game">APG</th>
-              <th>STL</th><th>BLK</th><th>TOV</th><th>PF</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="seasonStats.length === 0">
-              <td colspan="15" class="py-6 text-center text-ink-500">
-                No season data yet. Record some game stats first.
-              </td>
-            </tr>
-            <tr
-              v-for="r in seasonStats"
-              :key="r.player_id"
-              class="border-b border-ink-800 hover:bg-ink-800/40"
-            >
-              <td class="py-1.5 text-left">
-                <span class="font-mono text-xs text-ink-500">#{{ r.number ?? '—' }}</span>
-                <span class="ml-1">{{ r.name }}</span>
-              </td>
-              <td class="text-ink-500">{{ r.gp }}</td>
-              <td class="font-bold text-chalk">{{ r.pts }}</td>
-              <td class="font-semibold text-rim">{{ r.ppg }}</td>
-              <td>{{ r.fgPct }}</td><td>{{ r.tpPct }}</td><td>{{ r.ftPct }}</td>
-              <td>{{ r.reb }}</td>
-              <td class="text-ink-500">{{ r.rpg }}</td>
-              <td>{{ r.ast }}</td>
-              <td class="text-ink-500">{{ r.apg }}</td>
-              <td>{{ r.stl }}</td><td>{{ r.blk }}</td><td>{{ r.tov }}</td><td>{{ r.pf }}</td>
-            </tr>
-          </tbody>
-          <tfoot v-if="seasonStats.length" class="font-semibold text-chalk">
-            <tr class="border-t border-ink-600">
-              <td class="py-1.5 text-left">Team</td>
-              <td class="text-ink-500">{{ seasonGames }}</td>
-              <td>{{ seasonTotals.pts }}</td>
-              <td class="text-rim">{{ seasonGames ? (seasonTotals.pts / seasonGames).toFixed(1) : '—' }}</td>
-              <td>{{ formatPct(seasonTotals.fgm, seasonTotals.fga) }}</td>
-              <td>{{ formatPct(seasonTotals.tpm, seasonTotals.tpa) }}</td>
-              <td>{{ formatPct(seasonTotals.ftm, seasonTotals.fta) }}</td>
-              <td>{{ seasonTotals.reb }}</td>
-              <td class="text-ink-500">{{ seasonGames ? (seasonTotals.reb / seasonGames).toFixed(1) : '—' }}</td>
-              <td>{{ seasonTotals.ast }}</td>
-              <td class="text-ink-500">{{ seasonGames ? (seasonTotals.ast / seasonGames).toFixed(1) : '—' }}</td>
-              <td>{{ seasonTotals.stl }}</td><td>{{ seasonTotals.blk }}</td><td>{{ seasonTotals.tov }}</td><td>{{ seasonTotals.pf }}</td>
-            </tr>
-          </tfoot>
-        </table>
+      <div class="flex flex-col gap-4 pb-24 lg:flex-row lg:items-start">
+        <div class="card min-w-0 overflow-x-auto p-4 lg:w-1/2">
+          <h2 class="mb-1 font-stencil font-bold">Season Stats</h2>
+          <p class="mb-4 text-xs text-ink-500">
+            Aggregated across all recorded games. {{ seasonPlayerId ? 'The shot chart shows the selected player.' : 'Tap a player to chart their shots.' }}
+          </p>
+          <div class="min-w-[640px]">
+            <SeasonStatsTable
+              :rows="seasonStats"
+              :games="seasonGames"
+              :selected-id="seasonPlayerId"
+              empty-text="No season data yet. Record some game stats first."
+              @select="seasonPlayerId = $event"
+            />
+          </div>
+        </div>
+        <div class="scout-shotchart mx-auto flex w-full min-w-0 max-w-lg flex-col lg:mx-0 lg:w-1/2 lg:max-w-none">
+          <ShotChart
+            v-model:filter="seasonPeriod"
+            :game-id="null"
+            :player-id="seasonPlayerId"
+            :period="1"
+            :shots-source="seasonShots"
+            :events-source="seasonEvents"
+            default-view="zones"
+            readonly
+          />
+        </div>
       </div>
     </template>
   </section>
