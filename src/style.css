@@ -62,6 +62,14 @@ input[type='number']::-webkit-inner-spin-button {
 .btn-ghost-outline {
   @apply btn bg-ink-800 text-chalk hover:bg-ink-700;
 }
+/* Court editor toolbar: square icon buttons; .tb-on marks the active tool */
+.tb-btn {
+  @apply inline-flex h-[38px] w-[38px] items-center justify-center rounded-lg border border-ink-700 bg-ink-800 text-chalk transition
+    hover:bg-ink-700 active:bg-ink-600 disabled:cursor-not-allowed disabled:opacity-40;
+}
+.tb-on {
+  @apply border-rim bg-rim text-white hover:bg-rim;
+}
 .btn-danger {
   @apply btn border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20;
 }
@@ -98,31 +106,42 @@ input[type='number']::-webkit-inner-spin-button {
   height: calc(100dvh - 210px - var(--nav-clear))
 }
 
-.boxscore, .shotchart-container {
-  height: 50%
-}
-
+/* Stats tracker sizing.
+   Phones: the panel scrolls; the court is as wide as the screen at its true
+   aspect ratio. Tablet+: the box score takes only the height it needs (capped)
+   and the shot chart fills whatever is left, so the court is as big as the
+   screen allows instead of a fixed half. */
 .shotchart {
-  height: calc((100dvh - 250px) / 2 - var(--nav-clear))
+  width: 100%;
+  aspect-ratio: 500 / 470;
 }
 
 @media (min-width: 768px) {
+  .boxscore {
+    flex-shrink: 0;
+    max-height: 42%;
+  }
+  .shotchart-container {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+  .shotchart-court {
+    flex: 1 1 0;
+    min-height: 0;
+  }
   .shotchart {
-    height: calc((100dvh - 350px) / 2 - var(--nav-clear))
+    height: 100%;
+    aspect-ratio: auto;
   }
 }
 
 @media (min-width: 1024px) {
-  .shotchart-container {
-    height: calc(100dvh - 230px - var(--nav-clear))
-  }
-
   .boxscore {
-    height: fit-content
+    max-height: 100%;
+    height: fit-content;
   }
-
-  .shotchart {
-    height: calc(100dvh - 282px - var(--nav-clear))
+  .shotchart-container {
+    height: 100%;
   }
 }
 

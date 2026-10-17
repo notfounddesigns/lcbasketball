@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { capitalize, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   ArrowElement,
   CourtType,
@@ -10,7 +10,7 @@ import type {
   Point,
   TextElement,
 } from '@/types'
-import { ArrowUturnLeftIcon, BackspaceIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, HandRaisedIcon, PencilIcon, ArrowUpRightIcon, UserPlusIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/vue/24/outline';
+import { ArrowUturnLeftIcon, BackspaceIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, PencilIcon, UserPlusIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/vue/24/outline';
 import { useConfirm } from '@/composables/useConfirm'
 
 const { confirm } = useConfirm()
@@ -22,7 +22,9 @@ const { confirm } = useConfirm()
 const props = defineProps<{ modelValue: Diagram; editable?: boolean; totalPhases: number; tool?: Tool; autoHeight?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [Diagram], isAnimating: [boolean], exportPng: [] }>()
 
-type Tool = 'select' | 'pen' | 'arrow' | 'marker' | 'text' | 'erase' | 'undo'
+// 'route' is the transient mode after picking a move (cut/pass/…) from a
+// player's menu: the next drag draws that arrow out from the player.
+type Tool = 'select' | 'pen' | 'arrow' | 'marker' | 'text' | 'erase' | 'route'
 const tool = ref<Tool>(props.tool || 'select')
 const color = ref('#000000')
 const strokeWidth = ref(2)
@@ -97,9 +99,7 @@ function measureAvailableHeight() {
     const reserved = main
       ? parseFloat(getComputedStyle(main).paddingBottom) || 0
       : (document.querySelector('nav.fixed')?.getBoundingClientRect().height ?? 0)
-    // Subtract bottom toolbar height (tool strip ~60px)
-    const bottomH = 60
-    availableHeight.value = Math.max(0, window.innerHeight - top - reserved - bottomH)
+    availableHeight.value = Math.max(0, window.innerHeight - top - reserved)
   }
 }
 
@@ -150,6 +150,14 @@ const eraserPos = ref<Point | null>(null)
 // ---------- select/drag state ----------
 const selectedId = ref<string | null>(null)
 
+// Tapping (not dragging) a player opens this menu next to them.
+const playerMenu = ref<{ id: string; left: number; top: number } | null>(null)
+// Player an in-progress route (cut/pass/dribble/screen) starts from.
+const routeFrom = ref<string | null>(null)
+// Where a marker drag began, to tell a tap (open the menu) from a move.
+let markerDownAt: Point | null = null
+const TAP_SLOP = 0.012 // normalized — movement below this is a tap, not a drag
+
 type DragKind = 'marker' | 'text' | 'arrow-tail' | 'arrow-head' | 'arrow-control'
 const dragKind = ref<DragKind | null>(null)
 // Live copy of element being dragged, rendered instead of committed version
@@ -157,6 +165,8 @@ const dragLive = ref<DiagramElement | null>(null)
 
 watch(tool, () => {
   commitTextEdit()
+  playerMenu.value = null
+  if (tool.value !== 'route') routeFrom.value = null
   selectedId.value = null
   dragKind.value = null
   dragLive.value = null
@@ -302,10 +312,18 @@ function onSelectDown(e: PointerEvent) {
   if (tappedMarker && isMarkerDoubleTap(tappedMarker, p)) {
     // No drag state on the second tap: pointerup would otherwise commit the
     // stale drag copy over the ball change.
+    playerMenu.value = null
     selectedId.value = tappedMarker.id
     giveBallTo(tappedMarker)
     return
   }
+
+  // With the player menu open, a tap anywhere else just closes it.
+  if (playerMenu.value) {
+    playerMenu.value = null
+    return
+  }
+  markerDownAt = tappedMarker ? p : null
 
   // Double-tap a text label to edit it
   const tappedText = reversed.find((el): el is TextElement => el.type === 'text' && hitText(p, el))
@@ -442,10 +460,15 @@ function onSelectMove(e: PointerEvent) {
 }
 
 function onSelectUp() {
-  if (dragKind.value && dragLive.value) {
-    const updated = dragLive.value
-    commit(elements.value.map((el) => (el.id === updated.id ? updated : el)))
+  const live = dragLive.value
+  // A marker that was tapped rather than dragged opens its move menu.
+  if (dragKind.value === 'marker' && live?.type === 'marker' && markerDownAt && dist(live.at, markerDownAt) < TAP_SLOP) {
+    const original = elements.value.find((el): el is MarkerElement => el.id === live.id && el.type === 'marker')
+    if (original) openPlayerMenu(original)
+  } else if (dragKind.value && live) {
+    commit(elements.value.map((el) => (el.id === live.id ? live : el)))
   }
+  markerDownAt = null
   dragKind.value = null
   dragLive.value = null
 }
@@ -453,6 +476,23 @@ function onSelectUp() {
 // ---------- draw tools ----------
 function onDrawDown(e: PointerEvent) {
   const p = toNorm(e)
+
+  if (tool.value === 'route') {
+    const from = routeMarker()
+    if (!from) {
+      tool.value = 'select'
+      return
+    }
+    drawing.value = {
+      id: crypto.randomUUID(),
+      type: 'arrow',
+      color: color.value,
+      width: strokeWidth.value,
+      points: [routeTail(from.at, p), p],
+      style: arrowStyle.value,
+    } satisfies ArrowElement
+    return
+  }
 
   if (tool.value === 'erase') {
     erasing.value = true
@@ -572,7 +612,9 @@ function onDrawMove(e: PointerEvent) {
       if (!last || dist(last, q) >= MIN_POINT_GAP) pts.push(q)
     }
   } else if (drawing.value.type === 'arrow') {
-    drawing.value.points = [drawing.value.points[0], p]
+    // A route keeps its tail on the player's edge, facing the drag.
+    const from = tool.value === 'route' ? routeMarker() : null
+    drawing.value.points = [from ? routeTail(from.at, p) : drawing.value.points[0], p]
   }
 }
 
@@ -585,13 +627,87 @@ function onDrawUp() {
   // often produces a single sample. Keep it as a dot instead of throwing it
   // away (a zero-length path with round caps renders as a dot).
   if (el.type === 'pen' && el.points.length === 1) el.points.push({ ...el.points[0] })
+  // A route released almost on the player was a mis-tap: drop it, stay ready.
+  if (el.type === 'arrow' && dist(el.points[0], el.points[1]) < 0.02) return
   commit([...elements.value, el])
-  // Auto-select newly drawn arrow so user can immediately curve it
+  // Back to select with the new arrow selected so it can be curved right away.
+  // Selected after the tool watcher has run, which clears the selection.
   if (el.type === 'arrow') {
     tool.value = 'select'
-    selectedId.value = el.id
+    nextTick(() => { selectedId.value = el.id })
   }
 }
+
+// ---------- player menu: pick a move, then drag it out ----------
+const MARKER_R = 16 // SVG units — matches the drawn marker circle
+
+function routeMarker(): MarkerElement | null {
+  return elements.value.find((el): el is MarkerElement => el.type === 'marker' && el.id === routeFrom.value) ?? null
+}
+
+// Start the arrow just outside the player's circle, on the side facing p.
+function routeTail(center: Point, p: Point): Point {
+  const dx = (p.x - center.x) * W.value
+  const dy = (p.y - center.y) * H.value
+  const len = Math.hypot(dx, dy)
+  if (len < 1) return center
+  const off = (MARKER_R + 4) / len
+  return { x: center.x + (dx * off) / W.value, y: center.y + (dy * off) / H.value }
+}
+
+function openPlayerMenu(m: MarkerElement) {
+  const svg = svgRef.value
+  const container = containerRef.value
+  if (!svg || !container) return
+  const s = svg.getBoundingClientRect()
+  const c = container.getBoundingClientRect()
+  selectedId.value = m.id
+  playerMenu.value = {
+    id: m.id,
+    left: s.left - c.left + m.at.x * s.width,
+    top: s.top - c.top + m.at.y * s.height,
+  }
+}
+
+const ROUTES: { style: ArrowElement['style']; label: string }[] = [
+  { style: 'cut', label: 'Cut' },
+  { style: 'pass', label: 'Pass' },
+  { style: 'dribble', label: 'Dribble' },
+  { style: 'screen', label: 'Screen' },
+]
+
+function startRoute(style: ArrowElement['style']) {
+  if (!playerMenu.value) return
+  const id = playerMenu.value.id
+  arrowStyle.value = style
+  tool.value = 'route'
+  routeFrom.value = id
+}
+
+const menuMarker = computed(() =>
+  elements.value.find((el): el is MarkerElement => el.type === 'marker' && el.id === playerMenu.value?.id) ?? null,
+)
+
+function menuGiveBall() {
+  if (menuMarker.value) giveBallTo(menuMarker.value)
+  playerMenu.value = null
+}
+
+function menuDelete() {
+  const id = playerMenu.value?.id
+  playerMenu.value = null
+  if (id) commit(elements.value.filter((el) => el.id !== id))
+  selectedId.value = null
+}
+
+// Toolbar tools toggle: tapping the active one goes back to select.
+function toggleTool(t: Tool) {
+  tool.value = tool.value === t ? 'select' : t
+}
+
+const drawCursor = computed(() => tool.value === 'pen' || tool.value === 'arrow' || tool.value === 'route')
+
+const routeLabel = computed(() => ROUTES.find((r) => r.style === arrowStyle.value)?.label ?? 'Move')
 
 // ---------- double-tap / double-click suppression ----------
 // Drawing a dashed pass line means several short strokes in quick succession in
@@ -958,82 +1074,63 @@ defineExpose({ exportPng })
 
 <template>
   <div :class="editable ? 'flex flex-col gap-2' : ''">
-    <!-- ── TOP TOOLBAR (editable only) ── -->
-    <div v-if="editable && !props.tool" class="flex items-center flex-wrap gap-1.5">
-      <button
-        class="rounded-lg border border-ink-700 bg-ink-800 p-2 text-chalk hover:bg-ink-700 active:bg-ink-600"
-        title="Undo"
-        @click="undo"
-      >
-        <ArrowUturnLeftIcon class="h-5 w-5" />
-      </button>
-      <button
-        class="rounded-lg border border-ink-700 bg-ink-800 p-2 text-chalk hover:bg-ink-700 active:bg-ink-600"
-        title="Clear all"
-        @click="clearAll"
-      >
+    <!-- ── TOOLBAR (editable only) ── -->
+    <!-- Left: whole-diagram actions. Right: drawing tools, which toggle — select
+         mode is the default and tapping an active tool goes back to it. -->
+    <div v-if="editable" class="flex flex-wrap items-center gap-1.5">
+      <button class="tb-btn" title="Clear phase" aria-label="Clear phase" @click="clearAll">
         <TrashIcon class="h-5 w-5" />
       </button>
-      <button
-        class="rounded-lg border border-ink-700 bg-ink-800 p-2 text-chalk hover:bg-ink-700 active:bg-ink-600"
-        title="Export PNG"
-        @click="emit('exportPng')"
-      >
+      <button class="tb-btn" title="Export PNG" aria-label="Export PNG" @click="emit('exportPng')">
         <ArrowDownTrayIcon class="h-5 w-5" />
       </button>
-      <button
-        v-if="totalPhases > 1"
-        class="rounded-lg border border-ink-700 bg-ink-800 p-2 text-chalk hover:bg-ink-700 active:bg-ink-600"
-        title="Preview animation"
-        @click="emit('isAnimating', true)"
-      >
+      <button v-if="totalPhases > 1" class="tb-btn" title="Preview animation" aria-label="Preview animation" @click="emit('isAnimating', true)">
         <PlayIcon class="h-5 w-5" />
       </button>
-      <!-- Quick-start marker templates -->
-      <select
-        class="input h-[38px] !w-32 py-1.5 text-xs"
-        title="Insert a quick-start formation"
-        @change="onTemplateSelect"
-      >
+      <select class="input h-[38px] !w-32 py-1.5 text-xs" title="Insert a quick-start formation" @change="onTemplateSelect">
         <option value="" selected>Templates</option>
         <option value="3out">3-Out</option>
         <option value="4out">4-Out</option>
         <option value="4high">4-High</option>
         <option value="horns">Horns</option>
         <option value="5out">5-Out</option>
-        
       </select>
-      <!-- Context-sensitive options (arrow style, marker team/label, color) -->
-      <div v-if="tool === 'arrow' || tool === 'marker'" class="h-[38px] flex items-center gap-2">
-        <select v-if="tool === 'arrow'" v-model="arrowStyle" class="input w-fit flex-1 py-1 text-xs">
-          <option value="pass">Pass (dashed)</option>
-          <option value="cut">Cut (solid)</option>
-          <option value="dribble">Dribble (wavy)</option>
-          <option value="screen">Screen (bar)</option>
-        </select>
-        <template v-if="tool === 'marker'">
-          <select v-model="markerTeam" class="input !w-36 flex-1 py-1.5 text-xs">
-            <option value="home">Home</option>
-            <option value="away">Defense</option>
-            <option value="ball">Ball</option>
-          </select>
-          <input
-            v-model="markerLabel"
-            maxlength="2"
-            class="input !w-16 py-1.5 text-center text-xs"
-            aria-label="Marker label"
-          />
-        </template>
-      </div>
-      <!-- Half / Full court toggle -->
-      <div v-if="props.modelValue.elements.length == 0" class="ml-auto flex overflow-hidden rounded-lg border border-ink-600">
+      <div v-if="props.modelValue.elements.length == 0" class="flex overflow-hidden rounded-lg border border-ink-600">
         <button
           v-for="c in (['half', 'full'] as CourtType[])"
           :key="c"
-          class="px-4 py-2 text-xs font-semibold capitalize transition"
+          class="px-3 py-2 text-xs font-semibold capitalize transition"
           :class="modelValue.courtType === c ? 'bg-home text-ink-900' : 'bg-ink-800 text-chalk hover:bg-ink-700'"
           @click="setCourt(c)"
         >{{ c }}</button>
+      </div>
+
+      <!-- Marker options while placing players -->
+      <template v-if="tool === 'marker'">
+        <select v-model="markerTeam" class="input h-[38px] !w-28 py-1.5 text-xs" aria-label="Marker team">
+          <option value="home">Offense</option>
+          <option value="away">Defense</option>
+          <option value="ball">Ball</option>
+        </select>
+        <input v-model="markerLabel" maxlength="2" class="input h-[38px] !w-14 py-1.5 text-center text-xs" aria-label="Marker label" />
+      </template>
+
+      <div class="ml-auto flex items-center gap-1.5">
+        <button class="tb-btn" :class="{ 'tb-on': tool === 'pen' }" title="Draw" aria-label="Draw" :aria-pressed="tool === 'pen'" @click="toggleTool('pen')">
+          <PencilIcon class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" :class="{ 'tb-on': tool === 'marker' }" title="Add player" aria-label="Add player" :aria-pressed="tool === 'marker'" @click="toggleTool('marker')">
+          <UserPlusIcon class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" :class="{ 'tb-on': tool === 'text' }" title="Add text" aria-label="Add text" :aria-pressed="tool === 'text'" @click="toggleTool('text')">
+          <ChatBubbleBottomCenterTextIcon class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" title="Undo" aria-label="Undo" :disabled="!elements.length" @click="undo">
+          <ArrowUturnLeftIcon class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" :class="{ 'tb-on': tool === 'erase' }" title="Eraser" aria-label="Eraser" :aria-pressed="tool === 'erase'" @click="toggleTool('erase')">
+          <BackspaceIcon class="h-5 w-5" />
+        </button>
       </div>
     </div>
 
@@ -1050,8 +1147,8 @@ defineExpose({ exportPng })
         :viewBox="viewBox"
         class="block touch-none select-none"
         :style="editable && courtSize
-          ? { width: `${courtSize.width}px`, height: `${courtSize.height}px`, cursor: (tool === 'pen' || tool === 'arrow') ? 'crosshair' : 'default' }
-          : { width: '100%', aspectRatio: `${dims.w} / ${dims.h}`, cursor: editable && (tool === 'pen' || tool === 'arrow') ? 'crosshair' : 'default' }"
+          ? { width: `${courtSize.width}px`, height: `${courtSize.height}px`, cursor: drawCursor ? 'crosshair' : 'default' }
+          : { width: '100%', aspectRatio: `${dims.w} / ${dims.h}`, cursor: editable && drawCursor ? 'crosshair' : 'default' }"
         @pointerdown="onPointerDown"
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
@@ -1269,6 +1366,54 @@ defineExpose({ exportPng })
         />
       </svg>
 
+      <!-- move menu for a tapped player -->
+      <div
+        v-if="playerMenu"
+        class="absolute z-10 flex translate-x-6 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-ink-600 bg-ink-900/95 text-sm text-chalk shadow-2xl backdrop-blur"
+        :style="{ left: `${playerMenu.left}px`, top: `${playerMenu.top}px` }"
+        role="menu"
+        @pointerdown.stop
+      >
+        <button
+          v-for="r in ROUTES"
+          :key="r.style"
+          class="flex items-center gap-3 border-b border-ink-700 px-4 py-2.5 text-left font-semibold hover:bg-ink-700"
+          role="menuitem"
+          @click="startRoute(r.style)"
+        >
+          <svg width="28" height="10" viewBox="0 0 28 10" class="shrink-0">
+            <path v-if="r.style === 'dribble'" d="M1 5 Q4 0 7 5 T13 5 T19 5 T25 5" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <line v-else x1="1" y1="5" x2="25" y2="5" stroke="currentColor" stroke-width="1.8" :stroke-dasharray="r.style === 'pass' ? '4 3' : undefined" />
+            <line v-if="r.style === 'screen'" x1="26" y1="0.5" x2="26" y2="9.5" stroke="currentColor" stroke-width="2" />
+            <path v-else d="M22 1.5 L27 5 L22 8.5 Z" fill="currentColor" />
+          </svg>
+          {{ r.label }}
+        </button>
+        <div class="flex">
+          <button
+            v-if="menuMarker && menuMarker.team !== 'away'"
+            class="flex-1 px-3 py-2 text-xs text-ink-400 hover:bg-ink-700 hover:text-chalk"
+            title="Give this player the ball"
+            @click="menuGiveBall"
+          >Ball</button>
+          <button
+            class="flex-1 px-3 py-2 text-xs text-red-400 hover:bg-ink-700"
+            title="Remove player"
+            @click="menuDelete"
+          >Delete</button>
+        </div>
+      </div>
+
+      <!-- route mode hint -->
+      <div
+        v-if="tool === 'route'"
+        class="pointer-events-auto absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink-900/90 px-3 py-1.5 text-xs text-chalk shadow-lg"
+        @pointerdown.stop
+      >
+        Drag from the player to where the {{ routeLabel.toLowerCase() }} ends
+        <button class="text-ink-400 hover:text-chalk" @click="tool = 'select'">Cancel</button>
+      </div>
+
       <!-- inline text-annotation editor -->
       <input
         v-if="textEdit"
@@ -1284,48 +1429,6 @@ defineExpose({ exportPng })
         @blur="commitTextEdit"
       />
     </div>
-
-    <!-- ── BOTTOM TOOLBAR (editable only) ── -->
-    <div v-if="editable" class="flex flex-col gap-1">
-      <!-- Tool selector strip -->
-      <div class="flex rounded-2xl bg-ink-800 p-0.5 divide-x-2 divide-ink-500">
-        <button
-          v-for="(t, index) in (['undo', 'select', 'pen', 'arrow', 'marker', 'text', 'erase'] as Tool[])"
-          :key="t"
-          class="flex flex-1 items-center justify-center py-1.5 transition"
-          :class="[tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk']"
-          :title="t"
-          @click="t === 'undo' ? undo() : (tool = t)"
-        >
-          <ArrowUturnLeftIcon v-if="t === 'undo'" class="h-5 w-5" />
-          <HandRaisedIcon v-if="t === 'select'" class="h-5 w-5" />
-          <PencilIcon v-else-if="t === 'pen'" class="h-5 w-5" />
-          <ArrowUpRightIcon v-else-if="t === 'arrow'" class="h-5 w-5" />
-          <UserPlusIcon v-else-if="t === 'marker'" class="h-5 w-5" />
-          <ChatBubbleBottomCenterTextIcon v-else-if="t === 'text'" class="h-5 w-5" />
-          <BackspaceIcon v-else-if="t === 'erase'" class="h-5 w-5" />
-        </button>
-      </div>
-    </div>
-
-    <!-- ── WHITEBOARD TOOLBAR (whiteboard view only) ── -->
-    <!-- <div v-if="editable && props.tool" class="flex flex-col gap-2">
-      <div class="flex gap-1 rounded-2xl bg-ink-800 p-1.5">
-        <button
-          v-for="t in (['undo', 'pen', 'marker', 'erase'] as Tool[])"
-          :key="t"
-          class="flex flex-1 items-center justify-center rounded-xl py-2.5 transition"
-          :class="[tool === t ? 'bg-ink-600 text-chalk shadow-sm' : 'text-ink-400 hover:text-chalk', t === 'undo' && elements.length === 0 ? 'opacity-50 cursor-not-allowed' : '']"
-          :title="capitalize(t)"
-          :disabled="t === 'undo' && elements.length === 0"
-          @click="tool = t, tool === 'undo' ? [undo(), tool = 'pen'] : null"
-        >
-          <ArrowUturnLeftIcon v-if="t === 'undo'" class="h-5 w-5" />
-          <PencilIcon v-else-if="t === 'pen'" class="h-5 w-5" />
-          <TrashIcon v-else class="h-5 w-5" />
-        </button>
-      </div>
-    </div> -->
 
   </div>
 </template>

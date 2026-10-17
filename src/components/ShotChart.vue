@@ -145,6 +145,17 @@ function only3FGS(shots: ShotEvent[]): ShotEvent[] {
   })
 }
 
+// One pill per shot type; thresholds for the green / amber / red percentage.
+const summaryRows = computed(() => [
+  { label: 'FG', ...fgSummary.value, good: 40, ok: 30 },
+  { label: '3P', ...threeFGSummary.value, good: 30, ok: 20 },
+  { label: 'FT', ...ftSummary.value, good: 70, ok: 50 },
+])
+
+function pctTone(pct: number, good: number, ok: number) {
+  return pct >= good ? 'text-green-400' : pct >= ok ? 'text-orange-400' : 'text-rim'
+}
+
 function svgToNorm(svgX: number, svgY: number) {
   return { x: svgX / VB_W, y: svgY / VB_H }
 }
@@ -283,64 +294,29 @@ function shotPath(shot: ShotEvent): string {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2 w-full shotchart-container lg:h-full lg:w-1/2">
-    <!-- FG% summary bar -->
-    <div class="items-center gap-4 text-xs hidden md:flex">
-      <div class="flex flex-col gap-1">
-        <div class="flex gap-2 w-full">
-          <span class="text-ink-500">
-            FG:<span class="font-mono text-chalk">{{ fgSummary.made }}/{{ fgSummary.total }}</span>
-          </span>
-          <span class="text-ink-500 ml-auto">
-            FG%:<span class="font-mono font-bold" :class="fgSummary.pct < 40 ? `${fgSummary.pct >= 30 ? 'text-orange-400' : 'text-rim'}` : 'text-green-400'">
-              {{ fgSummary.pct }}%
-            </span>
-          </span>
-        </div>
-        <div class="flex gap-2 w-full">
-          <span class="text-ink-500">
-            3FG: <span class="font-mono text-chalk">{{ threeFGSummary.made }}/{{ threeFGSummary.total }}</span>
-          </span>
-          <span class="text-ink-500 ml-auto">
-            3FG%: <span class="font-mono font-bold" :class="threeFGSummary.pct < 30 ? `${threeFGSummary.pct >= 20 ? 'text-orange-400' : 'text-rim'}` : 'text-green-400'">
-              {{ threeFGSummary.pct }}%
-            </span>
-          </span>
-        </div>
-        <div class="flex gap-2 w-full">
-          <span class="text-ink-500">
-            FT: <span class="font-mono text-chalk">{{ ftSummary.made }}/{{ ftSummary.total }}</span>
-          </span>
-          <span class="text-ink-500 ml-auto">
-            FT%: <span class="font-mono font-bold" :class="ftSummary.pct < 70 ? `${ftSummary.pct >= 20 ? 'text-orange-400' : 'text-rim'}` : 'text-green-400'">
-              {{ ftSummary.pct }}%
-            </span>
-          </span>
-        </div>
-      </div>
-      <p class="text-center text-xs text-ink-500 mx-auto hidden md:block">
-        {{ playerId ? 'Tap court to place a shot' : 'Select a player to record shots' }}
-        · {{ displayShots.length }} shot{{ displayShots.length !== 1 ? 's' : '' }}
-      </p>
-      <span class="ml-auto grid grid-cols-2 items-center gap-x-3 gap-y-2 text-ink-500 leading-3">
-        <span class="inline-flex items-center gap-1">
-          <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make
+  <div class="flex flex-col gap-2 w-full shotchart-container lg:w-1/2">
+    <!-- Shooting summary + legend -->
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span
+        v-for="row in summaryRows"
+        :key="row.label"
+        class="inline-flex items-baseline gap-1.5 rounded-lg bg-ink-800 px-2.5 py-1"
+      >
+        <span class="font-semibold text-ink-500">{{ row.label }}</span>
+        <span class="font-mono text-chalk">{{ row.made }}/{{ row.total }}</span>
+        <span class="font-mono font-bold" :class="row.total ? pctTone(row.pct, row.good, row.ok) : 'text-ink-600'">
+          {{ row.total ? `${row.pct}%` : '—' }}
         </span>
-        <span class="inline-flex items-center gap-1">
-          <svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss
-        </span>
-        <span class="inline-flex items-center gap-1">
-          <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#9ca3af"/></svg>2PT
-        </span>
-        <span class="inline-flex items-center gap-1">
-          <svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT
-        </span>
+      </span>
+      <span class="ml-auto inline-flex items-center gap-3 text-[11px] text-ink-500">
+        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
+        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
+        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
       </span>
     </div>
 
-    <!-- Period filter -->
-    <div class="flex items-center gap-1">
-      <span class="mr-1 text-[11px] text-ink-500">Show</span>
+    <!-- Period filter + hint -->
+    <div class="flex flex-wrap items-center gap-1">
       <button
         v-for="f in PERIOD_FILTERS"
         :key="f.value"
@@ -348,10 +324,14 @@ function shotPath(shot: ShotEvent): string {
         :class="periodFilter === f.value ? 'bg-ink-500 text-chalk' : 'bg-ink-800 text-ink-500 hover:text-chalk'"
         @click="periodFilter = f.value; selectedShotId = null"
       >{{ f.label }}</button>
+      <span class="ml-auto text-[11px] text-ink-500">
+        {{ playerId ? 'Tap the court to add a shot' : 'Select a player to add shots' }}
+        · {{ displayShots.length }} shot{{ displayShots.length !== 1 ? 's' : '' }}
+      </span>
     </div>
 
     <!-- Court SVG -->
-    <div class="relative w-full">
+    <div class="shotchart-court relative w-full">
       <svg
         ref="svgRef"
         :viewBox="`0 0 ${VB_W} ${VB_H}`"
