@@ -6,6 +6,9 @@ import type {
   PracticePlanVideo,
   TimeBlockDraft,
 } from '@/types'
+import { useAccess } from '@/composables/useAccess'
+
+const { teamScope, teamColumns } = useAccess()
 
 // Module-level singletons — shared across component instances, matching usePlays.
 const plans = ref<PracticePlan[]>([])
@@ -48,9 +51,15 @@ export function usePracticePlan() {
     }
     loading.value = true
     error.value = null
-    const { data, error: err } = await supabase
-      .from('practice_plans')
-      .select(PLAN_SELECT)
+    const scope = await teamScope()
+    if (scope.skip) {
+      plans.value = []
+      loading.value = false
+      return
+    }
+    let query = supabase.from('practice_plans').select(PLAN_SELECT)
+    if (scope.teamId) query = query.eq('team_id', scope.teamId)
+    const { data, error: err } = await query
       .order('planned_for', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
 
@@ -130,7 +139,7 @@ export function usePracticePlan() {
     error.value = null
     const { data, error: err } = await supabase
       .from('practice_plans')
-      .insert(draft)
+      .insert({ ...draft, ...teamColumns() })
       .select('id')
       .single()
     if (err) {

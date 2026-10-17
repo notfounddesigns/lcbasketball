@@ -1,6 +1,9 @@
 import { ref } from 'vue'
 import { supabase, VIDEO_BUCKET, isSupabaseConfigured, withSignedUrls } from '@/lib/supabase'
 import type { Play, PlayDraft, PlayVideo } from '@/types'
+import { useAccess } from '@/composables/useAccess'
+
+const { teamScope, teamColumns } = useAccess()
 
 // Module-level singletons — state is shared across all component instances.
 // Intentional for a single-coach app; revisit if multi-user context is ever needed.
@@ -26,10 +29,15 @@ export function usePlays() {
     }
     loading.value = true
     error.value = null
-    const { data, error: err } = await supabase
-      .from('plays')
-      .select('*, videos:play_videos(*)')
-      .order('updated_at', { ascending: false })
+    const scope = await teamScope()
+    if (scope.skip) {
+      plays.value = []
+      loading.value = false
+      return
+    }
+    let query = supabase.from('plays').select('*, videos:play_videos(*)')
+    if (scope.teamId) query = query.eq('team_id', scope.teamId)
+    const { data, error: err } = await query.order('updated_at', { ascending: false })
 
     if (err) {
       error.value = err.message
@@ -42,7 +50,7 @@ export function usePlays() {
   async function createPlay(draft: PlayDraft): Promise<Play | null> {
     const { data, error: err } = await supabase
       .from('plays')
-      .insert(draft)
+      .insert({ ...draft, ...teamColumns() })
       .select('*, videos:play_videos(*)')
       .single()
     if (err) {

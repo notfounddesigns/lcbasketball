@@ -85,6 +85,9 @@ export interface Player {
   position: string | null
   active: boolean
   scout_team?: string | null // set for a scouted opponent's player; null = our roster
+  scout_for_team?: string | null // which of our teams scouted them
+  user_id?: string | null // the player's login, if they have one
+  created_by?: string | null
 }
 
 export interface Game {
@@ -228,4 +231,22 @@ export interface BoxScoreRow {
   blk: number
   tov: number
   pf: number
+}
+
+// ---------- Accounts & teams ----------
+export type Role = 'admin' | 'coach' | 'player'
+
+export interface Profile {
+  id: string
+  email: string
+  display_name: string | null
+  role: Role
+  created_at?: string
+}
+
+export interface Team {
+  id: string
+  name: string
+  created_by: string | null
+  created_at: string
 }

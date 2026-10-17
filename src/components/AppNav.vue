@@ -3,6 +3,10 @@ import { useRoute } from 'vue-router'
 import { BookOpenIcon, ChartBarIcon, ClipboardIcon, ClipboardDocumentListIcon, UserCircleIcon } from '@heroicons/vue/24/outline'
 import { BookOpenIcon as BookOpenSolid, ChartBarIcon as ChartBarSolid, ClipboardIcon as ClipboardSolid, ClipboardDocumentListIcon as ClipboardDocumentListSolid, UserCircleIcon as UserCircleSolid } from '@heroicons/vue/24/solid'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { useAccess } from '@/composables/useAccess'
+
+// The Account tab carries the current team's name: it's where you switch.
+const { currentTeam } = useAccess()
 
 const route = useRoute()
 
@@ -40,7 +44,9 @@ const tabs = [
           :is="route.path.startsWith(tab.to) ? tab.solid : tab.outline"
           class="h-6 w-6"
         />
-        <span class="text-[10px] font-semibold uppercase tracking-wider">{{ tab.label }}</span>
+        <span class="max-w-[6.5rem] truncate text-[10px] font-semibold uppercase tracking-wider">
+          {{ tab.to === '/account' && currentTeam ? currentTeam.name : tab.label }}
+        </span>
       </RouterLink>
     </div>
   </nav>
