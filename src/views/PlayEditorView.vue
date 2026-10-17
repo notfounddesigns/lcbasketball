@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Diagram, DiagramElement, MarkerElement, PlayDraft } from '@/types'
 import { usePlays } from '@/composables/usePlays'
@@ -9,7 +9,7 @@ import { PLAY_CATEGORIES, resolveCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import PlayAnimator from '@/components/PlayAnimator.vue'
 import VideoUploader from '@/components/VideoUploader.vue'
-import { BackspaceIcon, PlusIcon, PrinterIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { BackspaceIcon, Bars3BottomLeftIcon, PlusIcon, PrinterIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
 const router = useRouter()
@@ -58,20 +58,19 @@ const hasCanvasContent = computed(() =>
   (form.diagram.phases?.some((p) => p.length > 0) ?? false),
 )
 
-// Mobile metadata sheet — slides from top before creating a new play
-const showMetadataSheet = ref(false)
+// Play details (name, category, notes, roster, clips) live in a drawer so the
+// court gets the whole width. It opens on its own when a new play still needs
+// a name.
+const showDetails = ref(false)
+
+function openDetails(focusName = false) {
+  showDetails.value = true
+  if (focusName) nextTick(() => document.getElementById('pe-name')?.focus())
+}
 
 function onHeaderButtonClick() {
-  if (isNew.value && !form.name.trim()) {
-    if (window.innerWidth < 1024) {
-      showMetadataSheet.value = true
-    } else {
-      // Desktop: sidebar is visible, just focus the name field
-      document.getElementById('pe-name')?.focus()
-    }
-  } else {
-    save()
-  }
+  if (!form.name.trim()) openDetails(true)
+  else save()
 }
 
 // Return to the list the coach came from (with its ?category= / ?tab=); on a
@@ -209,7 +208,7 @@ async function save() {
       if (!created) toast(playsError.value ?? 'Could not create play', 'error')
       if (created) {
         toast('Play created')
-        showMetadataSheet.value = false
+        showDetails.value = false
         // Swap to edit route so the video section becomes available
         await router.replace(`/plays/${created.id}`)
       }
@@ -229,8 +228,16 @@ async function save() {
       <button class="btn-ghost py-1.5 text-sm" title="Back" aria-label="Back" @click="goBack">
         <BackspaceIcon class="h-5 w-5" />
       </button>
-      <h1 class="font-stencil grow text-lg font-bold capitalize leading-tight">
-        {{ isNew ? 'New play' : 'Edit play' }}
+      <button
+        class="btn-ghost py-1.5 text-sm"
+        :class="showDetails ? 'border-rim text-rim' : ''"
+        title="Play details" aria-label="Play details" :aria-expanded="showDetails"
+        @click="showDetails ? (showDetails = false) : openDetails()"
+      >
+        <Bars3BottomLeftIcon class="h-5 w-5" />
+      </button>
+      <h1 class="font-stencil grow truncate text-lg font-bold leading-tight">
+        {{ form.name.trim() || (isNew ? 'New play' : 'Edit play') }}
       </h1>
       <button
         v-if="!isNew"
@@ -248,66 +255,8 @@ async function save() {
       </button>
     </div>
 
-    <!-- Two-column on lg (iPad landscape+): left = metadata/video, right = diagram -->
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5 pt-3">
-      <!-- Left column: metadata + video clips -->
-      <div class="order-last lg:order-first flex flex-col gap-3 lg:w-64 lg:shrink-0">
-        <div>
-          <label class="label" for="pe-name">Name</label>
-          <input
-            id="pe-name"
-            v-model="form.name"
-            class="input"
-            placeholder="Horns flare"
-            autofocus
-          />
-        </div>
-        <div>
-          <label class="label" for="pe-cat">Category</label>
-          <select id="pe-cat" v-model="form.category" class="input">
-            <option value="">— No category —</option>
-            <option v-for="cat in PLAY_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
-            <option v-if="legacyCategory" :value="legacyCategory">{{ legacyCategory }} (old)</option>
-          </select>
-        </div>
-        <div>
-          <label class="label" for="pe-desc">Notes</label>
-          <textarea
-            id="pe-desc"
-            v-model="form.description"
-            rows="3"
-            class="input resize-none"
-            placeholder="When to call it, reads, counters…"
-          />
-        </div>
-
-        <!-- Scouting toggle -->
-        <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-ink-700 px-3 py-2.5">
-          <input type="checkbox" v-model="form.is_scouting" class="h-4 w-4 rounded accent-rim" />
-          <span class="text-sm font-medium">Opponent scouting report</span>
-        </label>
-
-        <!-- Roster reference -->
-        <div v-if="rosterPlayers.length" class="rounded-lg border border-ink-700 p-3">
-          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Roster</p>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-            <div v-for="pl in rosterPlayers" :key="pl.id" class="flex items-center gap-1.5">
-              <span class="w-6 shrink-0 text-right font-mono text-ink-400 text-xs">#{{ pl.number ?? '—' }}</span>
-              <span class="truncate">{{ pl.name }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- video clips (only once the play exists in the DB) -->
-        <div v-if="play" class="border-t border-ink-700 pt-3">
-          <label class="label">Video clips</label>
-          <VideoUploader :play="play" />
-        </div>
-        <p v-else class="text-xs text-ink-500">Save the play first to attach video clips.</p>
-      </div>
-
-      <!-- Right column: diagram (fills remaining width) -->
-      <div class="order-first lg:order-last min-w-0 flex-1">
+    <!-- Court fills the width; play details are in the drawer -->
+    <div class="min-w-0 pt-3">
         <div class="mb-1.5 flex items-center gap-1">
           <!-- <span class="label mb-0">Diagram</span> -->
           <button
@@ -341,7 +290,6 @@ async function save() {
         </div>
 
         <CourtCanvas ref="canvasRef" v-model="phaseDiagram" editable :total-phases="totalPhases" @is-animating="animating = $event" @export-png="exportPng" />
-      </div>
     </div>
   </section>
 
@@ -354,7 +302,7 @@ async function save() {
     @close="animating = false"
   />
 
-  <!-- Mobile metadata sheet: slides down from top before creating a new play -->
+  <!-- Play details drawer: slides in from the left over the court -->
   <Teleport to="body">
     <Transition
       enter-active-class="transition-opacity duration-300 ease-out"
@@ -362,70 +310,81 @@ async function save() {
       leave-active-class="transition-opacity duration-200 ease-in"
       leave-to-class="opacity-0"
     >
-      <div
-        v-if="showMetadataSheet"
-        class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-        @click="showMetadataSheet = false"
-      />
+      <div v-if="showDetails" class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" @click="showDetails = false" />
     </Transition>
     <Transition
       enter-active-class="transition-transform duration-300 ease-out"
-      enter-from-class="-translate-y-full"
+      enter-from-class="-translate-x-full"
       leave-active-class="transition-transform duration-200 ease-in"
-      leave-to-class="-translate-y-full"
+      leave-to-class="-translate-x-full"
     >
-      <div
-        v-if="showMetadataSheet"
-        class="fixed inset-x-0 top-0 z-50 max-h-[88vh] overflow-y-auto rounded-b-3xl border-b border-ink-700 bg-ink-900 px-4 pb-8 pt-4 shadow-2xl"
+      <aside
+        v-if="showDetails"
+        class="fixed bottom-0 left-0 top-0 z-50 flex w-80 max-w-[90vw] flex-col gap-3 overflow-y-auto border-r border-ink-700 bg-ink-900 p-4 shadow-2xl"
+        aria-label="Play details"
+        @keydown.esc="showDetails = false"
       >
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="font-stencil text-lg font-bold">New Play</h2>
-          <button class="btn-ghost p-1.5" title="Cancel" aria-label="Cancel" @click="showMetadataSheet = false">
+        <div class="mb-1 flex items-center justify-between">
+          <h2 class="font-stencil text-lg font-bold">Play details</h2>
+          <button class="btn-ghost p-1.5" title="Close" aria-label="Close" @click="showDetails = false">
             <XMarkIcon class="h-5 w-5" />
           </button>
         </div>
-        <div class="flex flex-col gap-3">
-          <div>
-            <label class="label" for="ms-name">Name</label>
-            <input
-              id="ms-name"
-              v-model="form.name"
-              class="input"
-              placeholder="Horns flare"
-              autofocus
-            />
-          </div>
-          <div>
-            <label class="label" for="ms-cat">Category</label>
-            <select id="ms-cat" v-model="form.category" class="input">
-              <option value="">— No category —</option>
-              <option v-for="cat in PLAY_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
-              <option v-if="legacyCategory" :value="legacyCategory">{{ legacyCategory }} (old)</option>
-            </select>
-          </div>
-          <div>
-            <label class="label" for="ms-desc">Notes</label>
-            <textarea
-              id="ms-desc"
-              v-model="form.description"
-              rows="3"
-              class="input resize-none"
-              placeholder="When to call it, reads, counters…"
-            />
-          </div>
-          <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-ink-700 px-3 py-2.5">
-            <input type="checkbox" v-model="form.is_scouting" class="h-4 w-4 rounded accent-rim" />
-            <span class="text-sm font-medium">Opponent scouting report</span>
-          </label>
-          <button
-            class="btn-primary py-3 text-sm font-semibold"
-            :disabled="!form.name.trim() || saving"
-            @click="save"
-          >
-            {{ saving ? 'Saving…' : 'Create play' }}
-          </button>
+        <div>
+          <label class="label" for="pe-name">Name</label>
+          <input id="pe-name" v-model="form.name" class="input" placeholder="Horns flare" @keyup.enter="isNew && form.name.trim() && save()" />
         </div>
-      </div>
+        <div>
+          <label class="label" for="pe-cat">Category</label>
+          <select id="pe-cat" v-model="form.category" class="input">
+            <option value="">— No category —</option>
+            <option v-for="cat in PLAY_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+            <option v-if="legacyCategory" :value="legacyCategory">{{ legacyCategory }} (old)</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" for="pe-desc">Notes</label>
+          <textarea
+            id="pe-desc"
+            v-model="form.description"
+            rows="4"
+            class="input resize-none"
+            placeholder="When to call it, reads, counters…"
+          />
+        </div>
+
+        <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-ink-700 px-3 py-2.5">
+          <input type="checkbox" v-model="form.is_scouting" class="h-4 w-4 rounded accent-rim" />
+          <span class="text-sm font-medium">Opponent scouting report</span>
+        </label>
+
+        <button
+          v-if="isNew"
+          class="btn-primary py-3 text-sm font-semibold"
+          :disabled="!form.name.trim() || saving"
+          @click="save"
+        >
+          {{ saving ? 'Saving…' : 'Create play' }}
+        </button>
+
+        <!-- Roster reference -->
+        <div v-if="rosterPlayers.length" class="rounded-lg border border-ink-700 p-3">
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Roster</p>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+            <div v-for="pl in rosterPlayers" :key="pl.id" class="flex items-center gap-1.5">
+              <span class="w-6 shrink-0 text-right font-mono text-xs text-ink-400">#{{ pl.number ?? '—' }}</span>
+              <span class="truncate">{{ pl.name }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- video clips (only once the play exists in the DB) -->
+        <div v-if="play" class="border-t border-ink-700 pt-3">
+          <label class="label">Video clips</label>
+          <VideoUploader :play="play" />
+        </div>
+        <p v-else class="text-xs text-ink-500">Save the play first to attach video clips.</p>
+      </aside>
     </Transition>
   </Teleport>
 

@@ -713,8 +713,10 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
           <!-- Shot chart + box score -->
           <div class="min-w-0 flex-1 py-2 flex flex-col lg:flex-row px-2 lg:px-0 gap-4 overflow-y-auto overflow-x-hidden lg:overflow-y-hidden boxscore-shotchart-container">
             
+            <!-- Box score + sub log share one column (beside the court on wide screens) -->
+            <div class="boxscore flex min-w-0 flex-col gap-3 lg:w-1/2">
             <!-- Box score (clickable rows to select player) -->
-            <div class="card p-2 w-full min-w-[600px] max-w-[95dvw] overflow-auto lg:w-1/2 boxscore lg:overflow-x-hidden lg:overflow-y-auto lg:min-w-[0px] lg:max-w-full">
+            <div class="card min-h-0 shrink p-2 w-full min-w-[600px] max-w-[95dvw] overflow-auto lg:overflow-x-hidden lg:overflow-y-auto lg:min-w-[0px] lg:max-w-full">
               <h2 class="mb-3 font-stencil font-bold">Box Score</h2>
               <table class="w-full text-right font-mono text-sm">
                 <thead class="text-ink-500">
@@ -778,7 +780,7 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
             </div>
 
             <!-- Sub log -->
-            <div v-if="subEvents.length > 0" class="rounded-xl bg-ink-800 p-3">
+            <div v-if="subEvents.length > 0" class="shrink-0 rounded-xl bg-ink-800 p-3">
               <div class="mb-1 flex items-center">
                 <p class="text-xs font-semibold text-ink-500">Substitutions</p>
                 <button
@@ -794,7 +796,8 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
                 </li>
               </ul>
             </div>
-            
+            </div>
+
             <ShotChart
               :game-id="activeGame.id"
               :player-id="selectedPlayerId"
