@@ -3,12 +3,12 @@ import { computed, ref, watch } from 'vue'
 import type { Game, Player, StatEvent } from '@/types'
 import { buildBoxScore, formatPct, periodLabel, teamTotals } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
-import { ArrowLeftIcon, ChartBarIcon, DocumentTextIcon, PencilIcon } from '@heroicons/vue/24/outline'
+import { ArrowLeftIcon, ChartBarIcon, DocumentTextIcon, PencilIcon, UserGroupIcon } from '@heroicons/vue/24/outline'
 
 // A scouting report at a glance: matchup, the coach's notes, the scouted team's
 // box score and shot chart. Tracking more stats happens back in the tracker.
 const props = defineProps<{ game: Game; roster: Player[]; events: StatEvent[] }>()
-defineEmits<{ back: []; track: []; 'edit-details': []; 'edit-notes': [] }>()
+defineEmits<{ back: []; track: []; 'edit-details': []; 'edit-notes': []; team: [] }>()
 
 const period = ref<number | 'all'>('all')
 const selectedPlayerId = ref<string | null>(null)
@@ -44,7 +44,7 @@ const hasNotes = computed(() => NOTES.some((n) => props.game[n.key]))
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 pb-nav">
+  <div class="flex flex-col gap-4 pb-24">
     <!-- Matchup header -->
     <div class="flex flex-wrap items-center gap-3">
       <button class="inline-flex items-center gap-1 py-1.5" @click="$emit('back')">
@@ -62,6 +62,9 @@ const hasNotes = computed(() => NOTES.some((n) => props.game[n.key]))
         {{ game.our_score }}–{{ game.opp_score }}
       </span>
       <div class="ml-auto flex items-center gap-2">
+        <button class="btn-ghost py-1.5 text-sm" :title="`Every report on ${game.scouted_team}`" @click="$emit('team')">
+          <UserGroupIcon class="h-4 w-4" /><span class="hidden sm:inline">Team overview</span>
+        </button>
         <button class="btn-ghost py-1.5 text-sm" title="Edit matchup details" @click="$emit('edit-details')">
           <PencilIcon class="h-4 w-4" /><span class="hidden sm:inline">Details</span>
         </button>

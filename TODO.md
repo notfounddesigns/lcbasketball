@@ -50,8 +50,8 @@
 48. - [ ] Live practice mode — countdown timer per block with a buzzer
 49. - [ ] Post-practice notes / reflection per block
 50. - [x] Stat-tracked scouting reports — matchup details, an opponent roster, the live tracker, and running notes (key players, offense, defense); finished reports show notes, box score and shot chart
-51. - [ ] Shot chart heat map — shade the court by zone (make % or volume) for a player, a game, a season, or a scouted team
-52. - [ ] Season view for a scouted team — combine every report on the same team into one box score, shot chart and notes summary
+51. - [x] Shot chart heat map — shade the court by zone (make % or volume) for a player, a game, a season, or a scouted team
+52. - [x] Season view for a scouted team — combine every report on the same team into one box score, shot chart and notes summary
 
 ---
 
