@@ -69,6 +69,7 @@ onBeforeUnmount(() => clearTimeout(printTimer))
           <div class="flex items-baseline justify-between gap-4 text-sm font-semibold text-gray-600">
             <p class="uppercase tracking-wide">
               {{ formatPlanDate(plan.planned_for, { weekday: 'long', month: 'long' }) }}
+              <span v-if="plan.name" class="block normal-case text-black">{{ plan.name }}</span>
               <span v-if="timeWindow" class="block normal-case">{{ timeWindow }}</span>
             </p>
             <span class="shrink-0">
@@ -113,6 +114,7 @@ onBeforeUnmount(() => clearTimeout(printTimer))
           <div class="flex items-baseline justify-between">
             <p class="mt-1 text-sm font-semibold uppercase tracking-wide text-gray-600">
               {{ formatPlanDate(plan.planned_for, { weekday: 'long', month: 'long' }) }}
+              <span v-if="plan.name" class="block normal-case text-black">{{ plan.name }}</span>
               <span v-if="timeWindow" class="block normal-case">{{ timeWindow }}</span>
             </p>
             <span class="text-sm font-semibold text-gray-600">
@@ -184,9 +186,11 @@ onBeforeUnmount(() => clearTimeout(printTimer))
 <style>
 /* ── PRINT ── */
 @media print {
-  /* Hide everything except the teleported print-sheet (direct body child) */
-  body > *:not(.print-sheet) { display: none !important; }
-  body, html { background: white !important; overflow: visible !important; }
+  /* Hide everything except the teleported print-sheet (direct body child).
+     Keyed on the sheet being in the DOM: these global styles stay loaded after
+     leaving the route and must not blank other pages' printouts. */
+  body:has(> .print-sheet) > *:not(.print-sheet) { display: none !important; }
+  html:has(.print-sheet), body:has(> .print-sheet) { background: white !important; overflow: visible !important; }
   .print-sheet { display: block !important; }
   .print-page {
     page-break-after: always;

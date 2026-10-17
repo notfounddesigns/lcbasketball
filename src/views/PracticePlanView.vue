@@ -124,7 +124,10 @@ function exportPlan(plan: PracticePlan) {
     >
       <article v-for="{ plan, window, ranges } in planCards" :key="plan.id" class="card flex h-fit flex-col p-4">
         <div class="flex items-start justify-between gap-2">
-          <h3 class="font-semibold leading-tight">{{ formatPlanDate(plan.planned_for) }}</h3>
+          <div class="min-w-0">
+            <h3 class="font-semibold leading-tight">{{ formatPlanDate(plan.planned_for) }}</h3>
+            <p v-if="plan.name" class="truncate text-sm text-ink-400">{{ plan.name }}</p>
+          </div>
           <span class="shrink-0 rounded bg-ink-700 px-1.5 py-0.5 text-[11px] text-ink-400">
             {{ formatDuration(totalMinutes(plan.items)) }}
           </span>

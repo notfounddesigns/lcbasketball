@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { PracticePlan, PracticePlanVideo, TimeBlockDraft } from '@/types'
 import { usePlays } from '@/composables/usePlays'
 import { usePracticePlan } from '@/composables/usePracticePlan'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   addMinutesToTime,
   blockRanges,
@@ -22,14 +23,20 @@ const emit = defineEmits<{ close: []; saved: [plan: PracticePlan] }>()
 
 const { plays, fetchPlays } = usePlays()
 const { createPlan, updatePlan, uploadPlanVideo, deletePlanVideo, error } = usePracticePlan()
+const { confirm } = useConfirm()
 
 const isEdit = computed(() => Boolean(props.plan))
 
-function emptyBlock(): TimeBlockDraft {
-  return { label: '', duration_min: 15, play_id: null, notes: '' }
+// Each block carries a client-only key so the list re-renders the right rows
+// (and keeps focus/inputs attached) when blocks are moved or removed.
+type EditorBlock = TimeBlockDraft & { key: string }
+
+function emptyBlock(): EditorBlock {
+  return { key: crypto.randomUUID(), label: '', duration_min: 15, play_id: null, notes: '' }
 }
 
 const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local
+const name = ref(props.plan?.name ?? '')
 const date = ref(props.plan?.planned_for ?? today)
 const startTime = ref(toTimeInput(props.plan?.start_time))
 const endTime = ref(toTimeInput(props.plan?.end_time))
@@ -47,9 +54,10 @@ function regenerateQuote() {
   quoteAuthor.value = q.author
 }
 
-const blocks = ref<TimeBlockDraft[]>(
+const blocks = ref<EditorBlock[]>(
   props.plan?.items?.length
     ? props.plan.items.map((i) => ({
+        key: i.id,
         label: i.label ?? '',
         duration_min: i.duration_min,
         play_id: i.play_id,
@@ -66,6 +74,34 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 const busy = ref(false)
 const localError = ref<string | null>(null)
+
+// Everything the coach can edit, for spotting unsaved changes on close.
+function snapshot(): string {
+  return JSON.stringify({
+    name: name.value, date: date.value, startTime: startTime.value, endTime: endTime.value,
+    notes: notes.value, quote: quote.value, quoteAuthor: quoteAuthor.value,
+    blocks: blocks.value.map(({ key: _key, ...b }) => b),
+    staged: stagedFiles.value.length, removed: removedVideoIds.value.length,
+  })
+}
+// Taken after setup so the start-time watcher's end-time fill doesn't count.
+let initialSnapshot = ''
+onMounted(() => { initialSnapshot = snapshot() })
+
+async function requestClose() {
+  if (busy.value) return
+  if (snapshot() !== initialSnapshot) {
+    const ok = await confirm({
+      title: 'Discard changes?',
+      message: 'This practice plan has unsaved changes.',
+      confirmText: 'Discard',
+      cancelText: 'Keep editing',
+      tone: 'danger',
+    })
+    if (!ok) return
+  }
+  emit('close')
+}
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50 MB, matching VideoUploader
 
@@ -184,7 +220,7 @@ async function onSubmit() {
   error.value = null
 
   const draft = {
-    name: null,
+    name: name.value.trim() || null,
     planned_for: date.value,
     start_time: startTime.value || null,
     end_time: endTime.value || null,
@@ -194,9 +230,10 @@ async function onSubmit() {
     quote_author: (quote.value.trim() && quoteAuthor.value.trim()) || null,
   }
 
+  const drafts: TimeBlockDraft[] = blocks.value.map(({ key: _key, ...b }) => b)
   const saved = props.plan
-    ? await updatePlan(props.plan.id, draft, blocks.value)
-    : await createPlan(draft, blocks.value)
+    ? await updatePlan(props.plan.id, draft, drafts)
+    : await createPlan(draft, drafts)
 
   if (!saved) {
     localError.value = error.value ?? 'Could not save the plan.'
@@ -219,7 +256,7 @@ async function onSubmit() {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" @click.self="!busy && emit('close')">
+    <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm" @click.self="requestClose">
       <div class="card my-4 w-full max-w-2xl overflow-y-hidden border-ink-700 shadow-2xl" role="dialog" aria-modal="true">
         <!-- header -->
         <header class="flex items-center justify-between gap-3 border-b border-ink-700/60 px-5 py-4">
@@ -232,12 +269,18 @@ async function onSubmit() {
               <span v-if="timeWindow"> · {{ timeWindow }}</span>
             </p>
           </div>
-          <button class="btn-ghost px-2 py-1.5" title="Close" @click="emit('close')">
+          <button class="btn-ghost px-2 py-1.5" title="Close" :disabled="busy" @click="requestClose">
             <XMarkIcon class="h-5 w-5" />
           </button>
         </header>
 
         <div class="flex flex-col gap-5 px-5 py-4 overflow-y-auto" style="height: calc(90dvh - 4rem - 4rem);">
+          <!-- optional title; plans are otherwise known by their date -->
+          <div>
+            <label class="label" for="plan-name">Title (optional)</label>
+            <input id="plan-name" v-model="name" class="input" placeholder="e.g. Pre-game shootaround" />
+          </div>
+
           <!-- date + practice window -->
           <div>
             <div class="flex flex-col gap-2 sm:flex-row">
@@ -277,7 +320,7 @@ async function onSubmit() {
             <div class="flex flex-col gap-3">
               <div
                 v-for="(block, i) in blocks"
-                :key="i"
+                :key="block.key"
                 class="rounded-xl border border-ink-700 bg-ink-900/40 p-3"
               >
                 <div class="mb-2 flex items-center gap-2">
@@ -405,7 +448,7 @@ async function onSubmit() {
 
         <!-- actions -->
         <footer class="flex justify-end gap-2 border-t border-ink-700/60 px-5 py-4">
-          <button class="btn-ghost" :disabled="busy" @click="emit('close')">Cancel</button>
+          <button class="btn-ghost" :disabled="busy" @click="requestClose">Cancel</button>
           <button class="btn-primary" :disabled="busy" @click="onSubmit">
             {{ busy ? 'Saving…' : isEdit ? 'Save changes' : 'Create' }}
           </button>

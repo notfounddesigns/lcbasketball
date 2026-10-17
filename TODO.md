@@ -28,13 +28,13 @@
 26. - [x] Shot chart period filter — filter the displayed shot markers by quarter (currently all shots for the game are overlaid regardless of period)
 27. - [x] Season stats CSV export — "Export Season CSV" button on the Season tab similar to the per-game export
 28. - [x] Lineup / on-court tracker — show which 5 players are currently on the floor based on sub events, highlight them in the tracker
-29. - [ ] Per-quarter box score — reuse the shot chart's All/Q1–OT filter on the box score; `period` is already stored on every stat event (completes the splits promised by #15)
+29. - [x] Per-quarter box score — reuse the shot chart's All/Q1–OT filter on the box score; `period` is already stored on every stat event (completes the splits promised by #15)
 30. - [x] Team totals row in the game box score and season table (team FG%, 3P%, FT%)
-31. - [ ] Edit game details — `updateGame` exists but only the final score is editable; add opponent, date, location and notes
+31. - [x] Edit game details — `updateGame` exists but only the final score is editable; add opponent, date, location and notes
 32. - [ ] Starting five at tip-off — let the coach set starters so the on-floor lineup is right from the first possession instead of inferred from stats/subs
 33. - [ ] Opponent scoring by quarter, then plus/minus and minutes played computed from the sub log
 34. - [ ] Player game log — tap a season row to see game-by-game lines and a season shot chart for that player
-35. - [ ] Foul alerts — warn at 4 and 5 personal fouls; team fouls per quarter with a bonus indicator
+35. - [x] Foul alerts — warn at 4 and 5 personal fouls; team fouls per quarter with a bonus indicator
 36. - [x] Multiple overtimes — only one OT (period 5) exists today; add OT2+
 37. - [ ] Offline queue for stat taps — store writes in IndexedDB and replay when the connection returns (gyms with bad Wi-Fi); also add Workbox `runtimeCaching` so plays/plans can be read offline
 38. - [ ] Whole-playbook export — multi-play PDF/print of the playbook or a category with a cover page and table of contents
@@ -85,11 +85,11 @@
 29. - [x] A saved final score can't be cleared — an empty number input yields `''`, which fails validation
 30. - [x] Sub picker allows impossible subs (bench player "out", on-court player "in"), subs can't be undone, and OT shows as "Q5" in the sub log
 31. - [x] Season percentages differ between screen (whole %) and CSV (one decimal) — the view rebuilds rows instead of using `buildSeasonStats`
-32. - [ ] Saving a play jumps back to phase 1 and can overwrite strokes drawn while the save was in flight — `updatePlay` replaces the store object, retriggering `watch(play)` which reloads the form
-33. - [ ] No unsaved-changes guard in the play editor or practice plan modal — back button, tab bar and practice-modal backdrop click discard edits without asking (the backdrop also isn't disabled while saving)
-34. - [ ] Reordering plays in one category wipes the saved order of other categories — `onDragOver` saves only the filtered ids (`PlaysView.vue`)
+32. - [x] Saving a play jumps back to phase 1 and can overwrite strokes drawn while the save was in flight — `updatePlay` replaces the store object, retriggering `watch(play)` which reloads the form
+33. - [x] No unsaved-changes guard in the play editor or practice plan modal — back button, tab bar and practice-modal backdrop click discard edits without asking (the backdrop also isn't disabled while saving)
+34. - [x] Reordering plays in one category wipes the saved order of other categories — `onDragOver` saves only the filtered ids (`PlaysView.vue`)
 35. - [ ] Deleting a play leaves its video files in Storage (rows cascade, files don't); a failed `play_videos` insert after upload leaves an orphan file; same pattern for practice plan clips, whose upload/delete failures are also ignored by the modal
-36. - [ ] Formation templates are placed for a half court — on a full court the players land along the sideline
+36. - [x] Formation templates are placed for a half court — on a full court the players land along the sideline
 37. - [x] Print views (play and practice plan) have no close/back button and cover the tab bar — in the installed PWA there's no way out; they also print the "Loading…" screen when the record isn't found
 38. - [x] Supabase health check never runs — `App.vue` imports `useSupabaseHealth`/`healthMessage` but never calls them, so a paused project shows a raw "Failed to fetch"
 39. - [x] No redirect to /login when the session ends (token refresh failure or sign-out in another tab) — views just start failing
@@ -109,11 +109,11 @@
 5. - [x] Wrap the modal `<div>` in `<Teleport to="body">` to avoid potential z-index stacking context issues when the modal is nested inside a transformed or overflow-hidden ancestor
 6. - [x] Redo new/edit play UI/UX. Instead of displaying in a modal, route to new page. The new play container should not overflow the screen width or height.
 7. - [x] Play category should be a picklist instead of text field. Hardcode categories on client side for now.
-8. - [ ] Move `default_preview_mode` off the `Play` type (it's UI-only, has no DB column, and is written onto shared store objects)
+8. - [x] Move `default_preview_mode` off the `Play` type (it's UI-only, has no DB column, and is written onto shared store objects)
 9. - [ ] Replace the order-based undo (pop last element) with snapshot undo/redo history per phase, so moves, erases, template applies and clears can be undone
-10. - [ ] Use stable ids instead of index keys for practice plan blocks (`v-for :key="i"` while blocks reorder)
-11. - [ ] Remove or wire up the practice plan `name` field — the modal always saves `name: null`
-12. - [ ] Scope the print views' global `@media print` styles so they don't linger after leaving the route
+10. - [x] Use stable ids instead of index keys for practice plan blocks (`v-for :key="i"` while blocks reorder)
+11. - [x] Remove or wire up the practice plan `name` field — the modal always saves `name: null`
+12. - [x] Scope the print views' global `@media print` styles so they don't linger after leaving the route
 
 ---
 
@@ -135,7 +135,7 @@
 13. - [ ] Animate player movement between phases in the play animator (markers keep ids across phases, so positions can be tweened); when adding a phase, move players to the head of their arrows
 14. - [ ] Copy/duplicate a phase and reorder phase tabs
 15. - [ ] Defensive formation presets (2-3, 1-3-1, man) alongside the offensive templates
-16. - [ ] Show play notes on every page of the print sheet
+16. - [x] Show play notes on every page of the print sheet
 17. - [x] Give the eraser its own icon (it currently shares the trash icon with "Clear all")
 18. - [ ] Proper dialog behaviour for modals — Escape to close, focus trap/return, `role="dialog"`/`aria-labelledby` (PracticePlanModal, PracticePlanViewer, ConfirmDialog)
 19. - [ ] Re-enable pinch zoom outside the court canvas (`user-scalable=no` fails WCAG 1.4.4)

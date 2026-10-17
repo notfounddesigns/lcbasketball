@@ -21,7 +21,9 @@ const playableVideos = computed(() => (props.plan.videos ?? []).filter((v) => v.
       <div class="mb-4 flex items-center gap-3">
         <button class="btn-ghost py-1.5 text-sm" @click="emit('close')">← Close</button>
         <div class="grow truncate">
-          <h2 class="truncate font-stencil text-lg font-bold">{{ formatPlanDate(plan.planned_for) }}</h2>
+          <h2 class="truncate font-stencil text-lg font-bold">
+            {{ formatPlanDate(plan.planned_for) }}<span v-if="plan.name" class="font-sans text-sm font-normal text-ink-400"> · {{ plan.name }}</span>
+          </h2>
           <p class="text-xs text-ink-500">
             <span v-if="timeWindow">{{ timeWindow }} · </span>
             {{ items.length }} block{{ items.length === 1 ? '' : 's' }} · {{ formatDuration(totalMinutes(items)) }}

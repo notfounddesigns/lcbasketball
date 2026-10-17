@@ -157,31 +157,69 @@ function rosterFor(evts: StatEvent[]): Player[] {
   return players.value.filter((p) => p.active !== false || withStats.has(p.id))
 }
 
-// ----- new game sheet -----
-const showNewGameSheet = ref(false)
-const newOpponent = ref('')
-const newDate = ref(new Date().toLocaleDateString('en-CA'))
+// ----- game sheet: create a game, or edit the open one's details -----
+const gameSheet = ref<'new' | 'edit' | null>(null)
+const sheetOpponent = ref('')
+const sheetDate = ref('')
+const sheetLocation = ref('')
+const sheetNotes = ref('')
+const savingGame = ref(false)
 
-async function onCreateGame() {
-  if (!newOpponent.value.trim()) return
-  const g = await createGame({
-    opponent: newOpponent.value.trim(),
-    played_on: newDate.value,
-    location: null,
-    notes: null,
-  })
-  if (g) {
-    toast(`Game vs ${g.opponent} created`)
-    newOpponent.value = ''
-    showNewGameSheet.value = false
-    selectedPlayerId.value = null
-    await openGame(g)
+function openNewGameSheet() {
+  sheetOpponent.value = ''
+  sheetDate.value = new Date().toLocaleDateString('en-CA')
+  sheetLocation.value = ''
+  sheetNotes.value = ''
+  gameSheet.value = 'new'
+}
+
+function openEditGameSheet() {
+  const g = activeGame.value
+  if (!g) return
+  sheetOpponent.value = g.opponent
+  sheetDate.value = g.played_on
+  sheetLocation.value = g.location ?? ''
+  sheetNotes.value = g.notes ?? ''
+  gameSheet.value = 'edit'
+}
+
+async function onSubmitGameSheet() {
+  if (!sheetOpponent.value.trim() || !sheetDate.value || savingGame.value) return
+  const details = {
+    opponent: sheetOpponent.value.trim(),
+    played_on: sheetDate.value,
+    location: sheetLocation.value.trim() || null,
+    notes: sheetNotes.value.trim() || null,
+  }
+  savingGame.value = true
+  try {
+    if (gameSheet.value === 'edit' && activeGame.value) {
+      const updated = await updateGame(activeGame.value.id, details)
+      if (!updated) {
+        toast('Could not save game details', 'error')
+        return
+      }
+      activeGame.value = updated
+      gameSheet.value = null
+      toast('Game details saved')
+      return
+    }
+    const g = await createGame(details)
+    if (g) {
+      toast(`Game vs ${g.opponent} created`)
+      gameSheet.value = null
+      selectedPlayerId.value = null
+      await openGame(g)
+    }
+  } finally {
+    savingGame.value = false
   }
 }
 
 async function openGame(g: Game) {
   const live = readLiveGame()
   activeGame.value = g
+  boxPeriod.value = 'all'
   activePeriod.value = 1
   maxPeriod.value = 5
   selectedPlayerId.value = null
@@ -233,7 +271,42 @@ async function tap(stat: StatType) {
   if (!activeGame.value || !selectedPlayerId.value) return
   // A short buzz confirms the tap without looking down (Android; no-op on iOS)
   navigator.vibrate?.(15)
-  await recordStat(activeGame.value.id, selectedPlayerId.value, stat, activePeriod.value)
+  const playerId = selectedPlayerId.value
+  const recorded = await recordStat(activeGame.value.id, playerId, stat, activePeriod.value)
+  if (recorded && stat === 'foul') warnFouls(playerId)
+}
+
+// ----- foul trouble -----
+const FOUL_WARN = 4
+const FOUL_OUT = 5
+// Team fouls reset each quarter; the opponent shoots bonus free throws from the
+// fifth (NFHS). Overtime periods carry the fourth quarter's count.
+const BONUS_AT = 5
+
+const fouls = computed(() => {
+  const byPlayer = new Map<string, number>()
+  for (const e of events.value) {
+    if (e.stat === 'foul') byPlayer.set(e.player_id, (byPlayer.get(e.player_id) ?? 0) + 1)
+  }
+  return byPlayer
+})
+
+const teamFouls = computed(() => {
+  const inPeriod = (p: number) => (activePeriod.value > 4 ? p >= 4 : p === activePeriod.value)
+  return events.value.filter((e) => e.stat === 'foul' && inPeriod(e.period ?? 1)).length
+})
+
+function warnFouls(playerId: string) {
+  const n = fouls.value.get(playerId) ?? 0
+  const name = playerName(playerId)
+  if (n === FOUL_OUT) toast(`${name} has fouled out (${n} fouls)`, 'error')
+  else if (n === FOUL_WARN) toast(`${name} has ${n} fouls — one more and they're out`, 'error')
+  if (teamFouls.value === BONUS_AT) toast(`Team fouls: ${BONUS_AT} — opponent in the bonus`)
+}
+
+function foulTone(playerId: string) {
+  const n = fouls.value.get(playerId) ?? 0
+  return n >= FOUL_OUT ? 'text-red-400 font-bold line-through' : n >= FOUL_WARN ? 'text-yellow-400 font-bold' : ''
 }
 
 async function onUndo(playerId: string) {
@@ -247,6 +320,19 @@ async function onUndo(playerId: string) {
 }
 
 const boxScore = computed(() => buildBoxScore(rosterFor(events.value), events.value))
+
+// The box score can show the whole game or one quarter; `period` is stored on
+// every stat event. The roster stays the whole game's so rows don't jump.
+const boxPeriod = ref<number | 'all'>('all')
+const boxPeriods = computed(() => {
+  const latest = Math.max(4, ...events.value.map((e) => e.period ?? 1))
+  return Array.from({ length: latest }, (_, i) => i + 1)
+})
+const shownBoxScore = computed(() => {
+  if (boxPeriod.value === 'all') return boxScore.value
+  const inPeriod = events.value.filter((e) => (e.period ?? 1) === boxPeriod.value)
+  return buildBoxScore(rosterFor(events.value), inPeriod)
+})
 
 const selectedHasEvents = computed(() =>
   !!selectedPlayerId.value && events.value.some((e) => e.player_id === selectedPlayerId.value),
@@ -332,9 +418,10 @@ watch(events, (curr) => {
 
 function exportCsv() {
   if (!activeGame.value) return
-  const label = `${activeGame.value.opponent} ${activeGame.value.played_on}`
-  const csv = boxScoreToCsv(boxScore.value, label)
-  downloadCsv(`boxscore-${activeGame.value.opponent}-${activeGame.value.played_on}.csv`, csv)
+  const period = boxPeriod.value === 'all' ? '' : ` ${periodLabel(boxPeriod.value)}`
+  const label = `${activeGame.value.opponent} ${activeGame.value.played_on}${period}`
+  const csv = boxScoreToCsv(shownBoxScore.value, label)
+  downloadCsv(`boxscore-${activeGame.value.opponent}-${activeGame.value.played_on}${period.replace(' ', '-')}.csv`, csv)
 }
 
 function exportSeasonCsv() {
@@ -347,8 +434,9 @@ const editingScore = ref(false)
 const ourScoreInput = ref<number | string | null>(null)
 const oppScoreInput = ref<number | string | null>(null)
 
-const boxScoreTotals = computed(() => teamTotals(boxScore.value))
-const teamPoints = computed(() => boxScoreTotals.value.pts)
+const boxScoreTotals = computed(() => teamTotals(shownBoxScore.value))
+// The final-score default is always the whole game, whatever quarter is shown.
+const teamPoints = computed(() => teamTotals(boxScore.value).pts)
 
 function hasFinal(g: Game) {
   return g.our_score != null && g.opp_score != null
@@ -510,7 +598,7 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
           v-if="!activeGame"
           class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
           title="New game" aria-label="New game"
-          @click="showNewGameSheet = true"
+          @click="openNewGameSheet"
         ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Game</span></button>
       </template>
     </div>
@@ -536,7 +624,7 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
             class="group relative cursor-pointer rounded-2xl border border-ink-700 bg-ink-800 p-4 transition hover:border-ink-600 hover:bg-ink-700"
             @click="openGame(g)">
             <p class="font-stencil font-bold leading-tight">vs {{ g.opponent }}</p>
-            <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}</p>
+            <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}<template v-if="g.location"> · {{ g.location }}</template></p>
             <p v-if="hasFinal(g)" class="mt-2 font-mono text-sm">
               <span
                 class="mr-1 font-bold"
@@ -561,10 +649,14 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
             @click="showRosterDrawer = true">
             <UserGroupIcon class="h-5 w-5" />Roster
           </button>
-          <span class="text-[clamp(0.875rem,2vw,1.75rem)] font-stencil uppercase leading-4 font-bold">
-            vs {{ activeGame.opponent }}<br />
-            <span class="text-sm text-ink-500">{{ activeGame.played_on }}</span>
-          </span>
+          <button
+            class="group text-left text-[clamp(0.875rem,2vw,1.75rem)] font-stencil uppercase leading-4 font-bold"
+            title="Edit game details"
+            @click="openEditGameSheet"
+          >
+            vs {{ activeGame.opponent }}<PencilIcon class="ml-1 inline h-3.5 w-3.5 align-baseline text-ink-500 group-hover:text-chalk" /><br />
+            <span class="text-sm normal-case text-ink-500">{{ activeGame.played_on }}<template v-if="activeGame.location"> · {{ activeGame.location }}</template></span>
+          </button>
           <button
             v-if="!editingScore"
             class="inline-flex items-center gap-1 self-center rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs hover:text-chalk"
@@ -601,6 +693,11 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
             <button type="button" class="text-ink-500" title="Cancel" @click="editingScore = false"><XMarkIcon class="h-5 w-5" /></button>
           </form>
           <div class="ml-auto flex items-center gap-1">
+            <span
+              class="mr-1 rounded px-2 py-1 text-[11px] font-semibold"
+              :class="teamFouls >= BONUS_AT ? 'bg-rim/20 text-rim' : 'text-ink-500'"
+              :title="`Team fouls this ${activePeriod > 4 ? 'overtime (4th quarter counts carry over)' : 'quarter'}`"
+            >Fouls {{ teamFouls }}<template v-if="teamFouls >= BONUS_AT"> · BONUS</template></span>
             <button
               v-for="p in PERIODS"
               :key="p.value"
@@ -688,22 +785,25 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
               </div>
             </div>
 
-            <!-- Free throws -->
-            <button
-              v-for="b in FT_STATS"
-              :key="b.stat"
-              class="min-h-[48px] rounded-lg text-sm font-bold transition"
-              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
-              :disabled="!selectedPlayerId"
-              @click="tap(b.stat)"
-            >{{ b.label }}</button>
+            <!-- Free throws, side by side so the whole column fits a landscape iPad -->
+            <div class="grid grid-cols-2 gap-1">
+              <button
+                v-for="b in FT_STATS"
+                :key="b.stat"
+                class="flex min-h-[48px] flex-col items-center justify-center rounded-lg text-sm font-bold leading-tight transition"
+                :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
+                :disabled="!selectedPlayerId"
+                :aria-label="b.label"
+                @click="tap(b.stat)"
+              >FT<span class="text-[10px] font-semibold uppercase">{{ b.label.split(' ')[1] }}</span></button>
+            </div>
             <div class="my-0.5 border-t border-ink-700" />
 
             <!-- Non-shooting action buttons -->
             <button
               v-for="b in ACTION_STATS"
               :key="b.stat"
-              class="min-h-[48px] rounded-lg text-sm font-bold transition"
+              class="min-h-[44px] rounded-lg text-sm font-bold transition"
               :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
               :disabled="!selectedPlayerId"
               @click="tap(b.stat)"
@@ -717,7 +817,19 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
             <div class="boxscore flex min-w-0 flex-col gap-3 lg:w-1/2">
             <!-- Box score (clickable rows to select player) -->
             <div class="card min-h-0 shrink p-2 w-full min-w-[600px] max-w-[95dvw] overflow-auto lg:overflow-x-hidden lg:overflow-y-auto lg:min-w-[0px] lg:max-w-full">
-              <h2 class="mb-3 font-stencil font-bold">Box Score</h2>
+              <div class="mb-3 flex flex-wrap items-center gap-2">
+                <h2 class="font-stencil font-bold">Box Score</h2>
+                <div class="ml-auto flex gap-0.5 rounded-lg bg-ink-900/60 p-0.5" role="group" aria-label="Box score period">
+                  <button
+                    v-for="p in ['all', ...boxPeriods] as const"
+                    :key="p"
+                    class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition"
+                    :class="boxPeriod === p ? 'bg-ink-600 text-chalk' : 'text-ink-500 hover:text-chalk'"
+                    :aria-pressed="boxPeriod === p"
+                    @click="boxPeriod = p"
+                  >{{ p === 'all' ? 'Game' : periodLabel(p) }}</button>
+                </div>
+              </div>
               <table class="w-full text-right font-mono text-sm">
                 <thead class="text-ink-500">
                   <tr class="border-b border-ink-700">
@@ -728,7 +840,7 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
                 </thead>
                 <tbody>
                   <tr
-                    v-for="r in boxScore"
+                    v-for="r in shownBoxScore"
                     :key="r.player_id"
                     class="cursor-pointer border-b border-ink-800 transition"
                     :class="selectedPlayerId === r.player_id
@@ -754,10 +866,10 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
                     <td class="relative">{{ r.stl }}<StatFlash :items="flashesFor(r.player_id, 'stl')" /></td>
                     <td class="relative">{{ r.blk }}<StatFlash :items="flashesFor(r.player_id, 'blk')" /></td>
                     <td class="relative">{{ r.tov }}<StatFlash :items="flashesFor(r.player_id, 'tov')" /></td>
-                    <td class="relative">{{ r.pf }}<StatFlash :items="flashesFor(r.player_id, 'pf')" /></td>
+                    <td class="relative" :class="boxPeriod === 'all' ? foulTone(r.player_id) : ''" :title="fouls.get(r.player_id) ? `${fouls.get(r.player_id)} fouls this game` : undefined">{{ r.pf }}<StatFlash :items="flashesFor(r.player_id, 'pf')" /></td>
                   </tr>
                 </tbody>
-                <tfoot v-if="boxScore.length" class="font-semibold text-chalk">
+                <tfoot v-if="shownBoxScore.length" class="font-semibold text-chalk">
                   <tr class="border-t border-ink-600">
                     <td class="py-2 text-left">Team</td>
                     <td>{{ boxScoreTotals.pts }}</td>
@@ -936,9 +1048,9 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
       leave-to-class="opacity-0"
     >
       <div
-        v-if="showNewGameSheet"
+        v-if="gameSheet"
         class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-        @click="showNewGameSheet = false"
+        @click="gameSheet = null"
       />
     </Transition>
     <Transition
@@ -948,35 +1060,45 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
       leave-to-class="-translate-y-full"
     >
       <div
-        v-if="showNewGameSheet"
+        v-if="gameSheet"
         class="fixed inset-x-0 top-0 z-50 rounded-b-3xl border-b border-ink-700 bg-ink-900 px-4 pb-8 pt-4 shadow-2xl w-full lg:w-1/3 lg:mx-auto lg:mt-10"
       >
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="font-stencil text-lg font-bold">New Game</h2>
-          <button class="btn-ghost p-1.5" title="Cancel" aria-label="Cancel" @click="showNewGameSheet = false"><XMarkIcon class="h-5 w-5" /></button>
+          <h2 class="font-stencil text-lg font-bold">{{ gameSheet === 'edit' ? 'Game Details' : 'New Game' }}</h2>
+          <button class="btn-ghost p-1.5" title="Cancel" aria-label="Cancel" @click="gameSheet = null"><XMarkIcon class="h-5 w-5" /></button>
         </div>
         <div class="flex flex-col gap-3">
           <div>
             <label class="label" for="ng-opponent">Opponent</label>
             <input
               id="ng-opponent"
-              v-model="newOpponent"
+              v-model="sheetOpponent"
               class="input"
               placeholder="e.g. West Morgan"
               autofocus
               autocomplete="off"
-              @keyup.enter="onCreateGame"
+              @keyup.enter="onSubmitGameSheet"
             />
           </div>
+          <div class="flex gap-3">
+            <div class="grow">
+              <label class="label" for="ng-date">Date</label>
+              <input id="ng-date" v-model="sheetDate" type="date" class="input" />
+            </div>
+            <div class="grow">
+              <label class="label" for="ng-location">Location (optional)</label>
+              <input id="ng-location" v-model="sheetLocation" class="input" placeholder="Home, Away, gym…" autocomplete="off" />
+            </div>
+          </div>
           <div>
-            <label class="label" for="ng-date">Date</label>
-            <input id="ng-date" v-model="newDate" type="date" class="input" />
+            <label class="label" for="ng-notes">Notes (optional)</label>
+            <textarea id="ng-notes" v-model="sheetNotes" rows="2" class="input resize-none" placeholder="Tournament, keys to the game…" />
           </div>
           <button
             class="btn-primary py-3 text-sm font-semibold"
-            :disabled="!newOpponent.trim()"
-            @click="onCreateGame"
-          >Start game</button>
+            :disabled="!sheetOpponent.trim() || !sheetDate || savingGame"
+            @click="onSubmitGameSheet"
+          >{{ savingGame ? 'Saving…' : gameSheet === 'edit' ? 'Save details' : 'Start game' }}</button>
         </div>
       </div>
     </Transition>
