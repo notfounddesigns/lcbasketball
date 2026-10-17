@@ -84,6 +84,7 @@ export interface Player {
   number: number | null
   position: string | null
   active: boolean
+  scout_team?: string | null // set for a scouted opponent's player; null = our roster
 }
 
 export interface Game {
@@ -95,6 +96,14 @@ export interface Game {
   our_score?: number | null // final score, null until recorded
   opp_score?: number | null
   created_at: string
+  // Scouting reports reuse the game tracker for another team. For these,
+  // scouted_team is who is scouted, opponent is who they played, and
+  // our_score / opp_score are the scouted team's / opponent's score.
+  is_scouting?: boolean
+  scouted_team?: string | null
+  scout_key_players?: string | null
+  scout_offense?: string | null
+  scout_defense?: string | null
 }
 
 // Append-only granular events. A box score is derived by aggregating these.

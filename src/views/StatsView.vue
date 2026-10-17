@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Game, Player, StatEvent, StatType } from '@/types'
 import { useStats } from '@/composables/useStats'
@@ -9,12 +9,14 @@ import { useToast } from '@/composables/useToast'
 import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, formatPct, periodLabel, seasonStatsToCsv, teamTotals } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
 import PlaysView from '@/views/PlaysView.vue'
+import ScoutNotesDrawer from '@/components/ScoutNotesDrawer.vue'
+import ScoutReportView from '@/components/ScoutReportView.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
-import { ArchiveBoxIcon, ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { ArchiveBoxIcon, ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, DocumentTextIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const {
-  players, games, events, allEvents, error,
+  players, scoutPlayers, games, events, allEvents, error,
   fetchPlayers, fetchGames, fetchEvents, fetchAllEvents,
   addPlayer, updatePlayer,
   createGame, updateGame, deleteGame,
@@ -47,9 +49,18 @@ const mode = computed<Mode>({
 })
 
 const activeGame = ref<Game | null>(null)
-// The game tracker (and its header controls) only shows on the Game tab; a
-// game left open stays open underneath Season/Scouting.
-const inGame = computed(() => mode.value === 'game' && !!activeGame.value)
+// The tracker shows on the tab its game belongs to: our games on Game,
+// scouting reports on Scouting. A game left open stays open underneath.
+const isScout = computed(() => !!activeGame.value?.is_scouting)
+const inGame = computed(() =>
+  !!activeGame.value && mode.value === (isScout.value ? 'scouting' : 'game'),
+)
+
+// Our games and scouting reports share the games table.
+const ourGames = computed(() => games.value.filter((g) => !g.is_scouting))
+const scoutReports = computed(() => games.value.filter((g) => g.is_scouting))
+// A finished (or not yet tracked) scouting report opened from the list.
+const viewingScout = ref<Game | null>(null)
 
 // ---- Period tracking ----
 const activePeriod = ref(1)
@@ -86,7 +97,10 @@ onMounted(async () => {
   await Promise.all([fetchPlayers(), fetchGames(), fetchAllEvents()])
   const live = readLiveGame()
   const game = live && games.value.find((g) => g.id === live.gameId)
-  if (game && !activeGame.value) await openGame(game)
+  if (game && !activeGame.value) {
+    if (game.is_scouting && mode.value !== 'scouting') mode.value = 'scouting'
+    await openGame(game)
+  }
 })
 
 // ----- roster drawer -----
@@ -102,6 +116,8 @@ async function onAddPlayer() {
     number: newPlayerNumber.value,
     position: null,
     active: true,
+    // In a scouting report the roster being built is the scouted team's.
+    ...(isScout.value ? { scout_team: scoutTeam.value } : {}),
   })
   if (!added) return
   toast(`${added.name} added`)
@@ -146,70 +162,137 @@ async function onReactivatePlayer(p: Player) {
   if (await updatePlayer(p.id, { active: true })) toast(`${p.name} is back on the roster`)
 }
 
-const activePlayers = computed(() => players.value.filter((p) => p.active !== false))
-const retiredPlayers = computed(() => players.value.filter((p) => p.active === false))
+// The team whose players the tracker shows: ours, or the scouted team's
+// roster (shared by every report on that team).
+const sameTeam = (a?: string | null, b?: string | null) =>
+  (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase()
+const scoutTeam = computed(() => (activeGame.value ?? viewingScout.value)?.scouted_team?.trim() ?? '')
+const rosterPool = computed(() =>
+  (activeGame.value ?? viewingScout.value)?.is_scouting
+    ? scoutPlayers.value.filter((p) => sameTeam(p.scout_team, scoutTeam.value))
+    : players.value,
+)
+
+const activePlayers = computed(() => rosterPool.value.filter((p) => p.active !== false))
+const retiredPlayers = computed(() => rosterPool.value.filter((p) => p.active === false))
 
 // Box scores list the current roster plus any retired player who has stats in
 // the events being summarised, so history never loses a name.
-function rosterFor(evts: StatEvent[]): Player[] {
+function rosterFor(evts: StatEvent[], pool: Player[] = rosterPool.value): Player[] {
   const withStats = new Set(evts.map((e) => e.player_id))
-  return players.value.filter((p) => p.active !== false || withStats.has(p.id))
+  return pool.filter((p) => p.active !== false || withStats.has(p.id))
 }
 
-// ----- game sheet: create a game, or edit the open one's details -----
-const gameSheet = ref<'new' | 'edit' | null>(null)
+// ----- game sheet: create a game or scouting report, or edit one's details -----
+const gameSheet = ref<'new' | 'new-scout' | 'edit' | null>(null)
+const sheetGame = ref<Game | null>(null) // the game being edited
+const sheetIsScout = computed(() =>
+  gameSheet.value === 'new-scout' || (gameSheet.value === 'edit' && !!sheetGame.value?.is_scouting),
+)
+const sheetScoutedTeam = ref('')
 const sheetOpponent = ref('')
 const sheetDate = ref('')
 const sheetLocation = ref('')
 const sheetNotes = ref('')
+const sheetTeamScore = ref<number | string | null>(null)
+const sheetOppScore = ref<number | string | null>(null)
 const savingGame = ref(false)
 
-function openNewGameSheet() {
+// Teams already scouted, offered as suggestions so a second report on the
+// same team picks up its roster.
+const knownScoutTeams = computed(() =>
+  [...new Set(scoutReports.value.map((g) => g.scouted_team?.trim()).filter(Boolean) as string[])].sort(),
+)
+
+function resetSheet() {
+  sheetScoutedTeam.value = ''
   sheetOpponent.value = ''
   sheetDate.value = new Date().toLocaleDateString('en-CA')
   sheetLocation.value = ''
   sheetNotes.value = ''
+  sheetTeamScore.value = null
+  sheetOppScore.value = null
+}
+
+function openNewGameSheet() {
+  resetSheet()
+  sheetGame.value = null
   gameSheet.value = 'new'
 }
 
-function openEditGameSheet() {
-  const g = activeGame.value
+function openNewScoutSheet() {
+  resetSheet()
+  sheetGame.value = null
+  gameSheet.value = 'new-scout'
+}
+
+function openEditGameSheet(g: Game | null = activeGame.value) {
   if (!g) return
+  sheetGame.value = g
+  sheetScoutedTeam.value = g.scouted_team ?? ''
   sheetOpponent.value = g.opponent
   sheetDate.value = g.played_on
   sheetLocation.value = g.location ?? ''
   sheetNotes.value = g.notes ?? ''
+  sheetTeamScore.value = g.our_score ?? null
+  sheetOppScore.value = g.opp_score ?? null
   gameSheet.value = 'edit'
 }
 
+const sheetValid = computed(() =>
+  !!sheetOpponent.value.trim() && !!sheetDate.value && (!sheetIsScout.value || !!sheetScoutedTeam.value.trim()),
+)
+
 async function onSubmitGameSheet() {
-  if (!sheetOpponent.value.trim() || !sheetDate.value || savingGame.value) return
-  const details = {
+  if (!sheetValid.value || savingGame.value) return
+  const blankToNull = (n: number | string | null) => (n === '' || n == null ? null : Number(n))
+  const details: Partial<Omit<Game, 'id' | 'created_at'>> & { opponent: string; played_on: string } = {
     opponent: sheetOpponent.value.trim(),
     played_on: sheetDate.value,
     location: sheetLocation.value.trim() || null,
-    notes: sheetNotes.value.trim() || null,
+  }
+  if (sheetIsScout.value) {
+    details.scouted_team = sheetScoutedTeam.value.trim()
+    details.our_score = blankToNull(sheetTeamScore.value)
+    details.opp_score = blankToNull(sheetOppScore.value)
+    const valid = (n: number | null | undefined) => n == null || (Number.isInteger(n) && n >= 0)
+    if (!valid(details.our_score) || !valid(details.opp_score)) {
+      toast('Scores must be whole numbers', 'error')
+      return
+    }
+  } else {
+    details.notes = sheetNotes.value.trim() || null
   }
   savingGame.value = true
   try {
-    if (gameSheet.value === 'edit' && activeGame.value) {
-      const updated = await updateGame(activeGame.value.id, details)
+    if (gameSheet.value === 'edit' && sheetGame.value) {
+      const updated = await updateGame(sheetGame.value.id, details)
       if (!updated) {
-        toast('Could not save game details', 'error')
+        toast(error.value ?? 'Could not save details', 'error')
         return
       }
-      activeGame.value = updated
+      if (activeGame.value?.id === updated.id) activeGame.value = updated
+      if (viewingScout.value?.id === updated.id) viewingScout.value = updated
       gameSheet.value = null
-      toast('Game details saved')
+      toast(updated.is_scouting ? 'Matchup details saved' : 'Game details saved')
       return
     }
-    const g = await createGame(details)
-    if (g) {
-      toast(`Game vs ${g.opponent} created`)
-      gameSheet.value = null
-      selectedPlayerId.value = null
-      await openGame(g)
+    const scouting = gameSheet.value === 'new-scout'
+    const g = await createGame({
+      location: null, notes: null, ...details,
+      ...(scouting ? { is_scouting: true } : {}),
+    } as Omit<Game, 'id' | 'created_at'>)
+    if (!g) {
+      toast(error.value ?? 'Could not create', 'error')
+      return
     }
+    toast(scouting ? `Scouting ${g.scouted_team}` : `Game vs ${g.opponent} created`)
+    gameSheet.value = null
+    selectedPlayerId.value = null
+    viewingScout.value = null
+    await openGame(g)
+    // A team scouted for the first time has no roster yet: start there.
+    if (scouting && !rosterPool.value.length) showRosterDrawer.value = true
   } finally {
     savingGame.value = false
   }
@@ -235,14 +318,17 @@ async function openGame(g: Game) {
 
 async function onDeleteGame(g: Game) {
   const ok = await confirm({
-    title: 'Delete game',
-    message: `Delete game vs ${g.opponent}? All stat events will be removed.`,
+    title: g.is_scouting ? 'Delete scouting report' : 'Delete game',
+    message: g.is_scouting
+      ? `Delete the report on ${g.scouted_team} vs ${g.opponent}? Its stats, shots and notes will be removed.`
+      : `Delete game vs ${g.opponent}? All stat events will be removed.`,
     confirmText: 'Delete',
     tone: 'danger',
   })
   if (!ok) return
   await deleteGame(g.id)
   if (activeGame.value?.id === g.id) activeGame.value = null
+  if (viewingScout.value?.id === g.id) viewingScout.value = null
 }
 
 // ----- free throws: one tap each, no court position needed -----
@@ -263,7 +349,7 @@ const ACTION_STATS: { stat: StatType; label: string; tone: string }[] = [
 ]
 
 const selectedPlayerId = ref<string | null>(null)
-const selectedPlayer = computed(() => players.value.find((p) => p.id === selectedPlayerId.value) ?? null)
+const selectedPlayer = computed(() => rosterPool.value.find((p) => p.id === selectedPlayerId.value) ?? null)
 
 async function tap(stat: StatType) {
   if (!activeGame.value || !selectedPlayerId.value) return
@@ -419,8 +505,14 @@ function exportCsv() {
   downloadCsv(`boxscore-${activeGame.value.opponent}-${activeGame.value.played_on}${period.replace(' ', '-')}.csv`, csv)
 }
 
+// Season numbers are our team's only: scouting reports are left out.
+const seasonEvents = computed(() => {
+  const scoutIds = new Set(scoutReports.value.map((g) => g.id))
+  return allEvents.value.filter((e) => !scoutIds.has(e.game_id))
+})
+
 function exportSeasonCsv() {
-  const csv = seasonStatsToCsv(buildSeasonStats(rosterFor(allEvents.value), allEvents.value))
+  const csv = seasonStatsToCsv(buildSeasonStats(rosterFor(seasonEvents.value, players.value), seasonEvents.value))
   downloadCsv(`season-stats-${new Date().toLocaleDateString('en-CA')}.csv`, csv)
 }
 
@@ -476,15 +568,73 @@ async function saveScore() {
 const playedIds = computed(() => new Set(events.value.map((e) => e.player_id)))
 
 function playerName(id: string) {
-  return players.value.find((p) => p.id === id)?.name ?? 'Unknown'
+  return [...players.value, ...scoutPlayers.value].find((p) => p.id === id)?.name ?? 'Unknown'
 }
 
+// ----- tracker sizing -----
+// The tracker fills the screen below the sticky header, which can wrap onto a
+// second line (a long matchup name), so measure where it starts.
+const trackerEl = ref<HTMLElement | null>(null)
+const trackerTop = ref(128)
+function measureTracker() {
+  const el = trackerEl.value
+  if (el) trackerTop.value = Math.round(el.getBoundingClientRect().top + window.scrollY)
+}
+const headerObserver = new ResizeObserver(() => measureTracker())
+watch(trackerEl, (el) => {
+  headerObserver.disconnect()
+  const header = document.querySelector('[data-stats-header]')
+  if (el && header) {
+    headerObserver.observe(header)
+    nextTick(measureTracker)
+  }
+})
+window.addEventListener('resize', measureTracker)
+onBeforeUnmount(() => {
+  headerObserver.disconnect()
+  window.removeEventListener('resize', measureTracker)
+})
+
+// ----- scouting reports -----
+const showScoutNotes = ref(false)
+const notesGame = computed(() => activeGame.value?.is_scouting ? activeGame.value : viewingScout.value)
+
+function onNotesSaved(g: Game) {
+  if (activeGame.value?.id === g.id) activeGame.value = g
+  if (viewingScout.value?.id === g.id) viewingScout.value = g
+}
+
+async function openScoutReport(g: Game) {
+  activeGame.value = null
+  viewingScout.value = g
+  selectedPlayerId.value = null
+  await fetchEvents(g.id)
+}
+
+// Leaving the tracker of a scouting report lands on the report itself.
+async function leaveTracker() {
+  const g = activeGame.value
+  activeGame.value = null
+  if (g?.is_scouting) await openScoutReport(g)
+}
+
+async function trackScout(g: Game) {
+  viewingScout.value = null
+  await openGame(g)
+}
+
+// The Scouting tab lists stat reports, with diagrammed plays on a sub-tab.
+const scoutingView = computed<'reports' | 'plays'>({
+  get: () => (route.query.view === 'plays' ? 'plays' : 'reports'),
+  set: (v) => { router.replace({ query: { mode: 'scouting', ...(v === 'plays' ? { view: 'plays' } : {}) } }) },
+})
+
 // ----- season stats -----
-const seasonBoxScore = computed(() => buildBoxScore(rosterFor(allEvents.value), allEvents.value))
+const seasonBoxScore = computed(() => buildBoxScore(rosterFor(seasonEvents.value, players.value), seasonEvents.value))
 
 // Same numbers as the season CSV (buildSeasonStats), formatted for display.
 const seasonStats = computed(() =>
-  buildSeasonStats(rosterFor(allEvents.value), allEvents.value).map((r) => ({
+  buildSeasonStats(rosterFor(seasonEvents.value, players.value), seasonEvents.value).map((r) => ({
     ...r,
     ppg: r.gp ? r.ppg.toFixed(1) : '—',
     rpg: r.gp ? r.rpg.toFixed(1) : '—',
@@ -495,26 +645,28 @@ const seasonStats = computed(() =>
   })),
 )
 const seasonTotals = computed(() => teamTotals(seasonBoxScore.value))
-const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)).size)
+const seasonGames = computed(() => new Set(seasonEvents.value.map((e) => e.game_id)).size)
 </script>
 
 <template>
   <section class="flex flex-col gap-4">
     <!-- Sticky page header: page title + tabs, or the open game's controls -->
     <div
+      data-stats-header
       class="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-2 bg-ink-900/95 px-4 pt-6 pb-2 backdrop-blur-xl">
       <h1 v-if="!inGame" class="font-stencil text-xl font-bold capitalize leading-tight">Stats</h1>
       <template v-if="inGame && activeGame">
-        <button class="inline-flex items-center gap-1 py-1.5" @click="activeGame = null">
+        <button class="inline-flex items-center gap-1 py-1.5" @click="leaveTracker">
           <ArrowLeftIcon class="h-5 w-5 text-chalk" />
-          <span class="font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase text-chalk">Games</span>
+          <span class="font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase text-chalk">{{ isScout ? 'Report' : 'Games' }}</span>
         </button>
         <button
           class="group text-left font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase leading-tight"
-          title="Edit game details"
-          @click="openEditGameSheet"
+          :title="isScout ? 'Edit matchup details' : 'Edit game details'"
+          @click="openEditGameSheet()"
         >
-          vs {{ activeGame.opponent }}<PencilIcon class="ml-1 inline h-3.5 w-3.5 align-baseline text-ink-500 group-hover:text-chalk" /><br />
+          <template v-if="isScout">{{ activeGame.scouted_team }} <span class="text-ink-500">vs</span> {{ activeGame.opponent }}</template>
+          <template v-else>vs {{ activeGame.opponent }}</template><PencilIcon class="ml-1 inline h-3.5 w-3.5 align-baseline text-ink-500 group-hover:text-chalk" /><br />
           <span class="font-sans text-xs font-normal normal-case text-ink-500">{{ activeGame.played_on }}<template v-if="activeGame.location"> · {{ activeGame.location }}</template></span>
         </button>
         <button
@@ -548,6 +700,12 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
           <button type="submit" class="text-home" title="Save score"><CheckIcon class="h-5 w-5" /></button>
           <button type="button" class="text-ink-500" title="Cancel" @click="editingScore = false"><XMarkIcon class="h-5 w-5" /></button>
         </form>
+        <button
+          v-if="isScout"
+          class="inline-flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 text-xs text-gray-300 hover:text-chalk"
+          title="Scouting notes"
+          @click="showScoutNotes = true"
+        ><DocumentTextIcon class="h-4 w-4" />Notes</button>
 
         <!-- Period selector, team fouls, undo, export -->
         <div class="ml-auto flex items-center gap-1">
@@ -604,19 +762,23 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         v-if="mode === 'season'"
         class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-ink-500 py-1.5 text-xs hover:bg-ink-500/90 disabled:opacity-40"
         title="Export season CSV"
-        :disabled="!allEvents.length"
+        :disabled="!seasonEvents.length"
         @click="exportSeasonCsv">
         <FolderArrowDownIcon class="h-5 w-5" />Export
       </button>
 
-      <template v-if="mode === 'game'">
-        <button
-          v-if="!activeGame"
-          class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
-          title="New game" aria-label="New game"
-          @click="openNewGameSheet"
-        ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Game</span></button>
-      </template>
+      <button
+        v-if="mode === 'game' && !inGame"
+        class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
+        title="New game" aria-label="New game"
+        @click="openNewGameSheet"
+      ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Game</span></button>
+      <button
+        v-if="mode === 'scouting' && !inGame && !viewingScout && scoutingView === 'reports'"
+        class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
+        title="New scouting report" aria-label="New scouting report"
+        @click="openNewScoutSheet"
+      ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">Scouting Report</span></button>
     </div>
     <hr class="h-[2px] bg-ink-700/60 border-0 rounded-lg" />
 
@@ -625,16 +787,16 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
     </p>
 
     <!-- ==================== GAME MODE ==================== -->
-    <template v-if="mode === 'game'">
+    <template v-if="mode === 'game' || inGame">
 
-      <!-- No active game: game cards grid -->
-      <template v-if="!activeGame">
-        <div v-if="!games.length" class="flex h-48 items-center justify-center rounded-2xl border border-dashed border-ink-700 text-sm text-ink-500">
+      <!-- No open game: game cards grid -->
+      <template v-if="!inGame">
+        <div v-if="!ourGames.length" class="flex h-48 items-center justify-center rounded-2xl border border-dashed border-ink-700 text-sm text-ink-500">
           No games yet — tap <strong class="mx-1 text-chalk">New Game</strong> to start tracking.
         </div>
         <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div
-            v-for="g in games"
+            v-for="g in ourGames"
             :key="g.id"
             class="group relative cursor-pointer rounded-2xl border border-ink-700 bg-ink-800 p-4 transition hover:border-ink-600 hover:bg-ink-700"
             @click="openGame(g)">
@@ -655,9 +817,9 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         </div>
       </template>
 
-      <!-- Active game: stat column | shot chart over box score -->
-      <template v-else>
-        <div class="flex gap-3">
+      <!-- Open game or scouting report: stat column | shot chart over box score -->
+      <template v-else-if="activeGame">
+        <div ref="trackerEl" class="flex gap-3" :style="{ '--tracker-top': `${trackerTop}px` }">
 
           <!-- Stat column (tablet/desktop; phones get the bottom stat pad) -->
           <div class="stat-column hidden w-32 shrink-0 flex-col gap-2 md:flex">
@@ -816,7 +978,68 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
     </template>
 
     <!-- ==================== SCOUTING ==================== -->
-    <PlaysView v-else-if="mode === 'scouting'" scouting />
+    <template v-else-if="mode === 'scouting'">
+      <ScoutReportView
+        v-if="viewingScout"
+        :game="viewingScout"
+        :roster="rosterPool"
+        :events="events"
+        @back="viewingScout = null"
+        @track="trackScout(viewingScout)"
+        @edit-details="openEditGameSheet(viewingScout)"
+        @edit-notes="showScoutNotes = true"
+      />
+      <template v-else>
+        <div class="flex gap-1 self-start rounded-lg bg-ink-800 p-0.5" role="tablist">
+          <button
+            class="rounded-md px-3 py-1 text-xs font-semibold transition"
+            :class="scoutingView === 'reports' ? 'bg-ink-600 text-chalk' : 'text-ink-500 hover:text-chalk'"
+            role="tab" :aria-selected="scoutingView === 'reports'"
+            @click="scoutingView = 'reports'"
+          >Reports</button>
+          <button
+            class="rounded-md px-3 py-1 text-xs font-semibold transition"
+            :class="scoutingView === 'plays' ? 'bg-ink-600 text-chalk' : 'text-ink-500 hover:text-chalk'"
+            role="tab" :aria-selected="scoutingView === 'plays'"
+            @click="scoutingView = 'plays'"
+          >Scouted plays</button>
+        </div>
+
+        <PlaysView v-if="scoutingView === 'plays'" scouting />
+        <template v-else>
+          <div
+            v-if="!scoutReports.length"
+            class="flex h-48 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-ink-700 px-6 text-center text-sm text-ink-500"
+          >
+            <p>Track an opponent's stats from film or the stands, with notes on their personnel and schemes.</p>
+            <button class="btn-primary" @click="openNewScoutSheet"><PlusIcon class="h-5 w-5" />New scouting report</button>
+          </div>
+          <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div
+              v-for="g in scoutReports"
+              :key="g.id"
+              class="group relative cursor-pointer rounded-2xl border border-ink-700 bg-ink-800 p-4 transition hover:border-ink-600 hover:bg-ink-700"
+              @click="openScoutReport(g)">
+              <p class="pr-5 font-stencil font-bold leading-tight">{{ g.scouted_team }}</p>
+              <p class="mt-0.5 text-xs text-ink-400">vs {{ g.opponent }}</p>
+              <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}<template v-if="g.location"> · {{ g.location }}</template></p>
+              <p v-if="hasFinal(g)" class="mt-2 font-mono text-sm">
+                <span
+                  class="mr-1 font-bold"
+                  :class="resultLabel(g) === 'W' ? 'text-green-400' : resultLabel(g) === 'L' ? 'text-rim' : 'text-ink-400'"
+                >{{ resultLabel(g) }}</span>{{ g.our_score }}–{{ g.opp_score }}
+              </p>
+              <button
+                class="absolute right-2 top-2 rounded p-1 text-red-500 hover:text-red-300"
+                title="Delete report" aria-label="Delete report"
+                @click.stop="onDeleteGame(g)">
+                <TrashIcon class="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </template>
+      </template>
+    </template>
 
     <!-- ==================== SEASON MODE ==================== -->
     <template v-else>
@@ -911,25 +1134,42 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         class="fixed inset-x-0 top-0 z-50 rounded-b-3xl border-b border-ink-700 bg-ink-900 px-4 pb-8 pt-4 shadow-2xl w-full lg:w-1/3 lg:mx-auto lg:mt-10"
       >
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="font-stencil text-lg font-bold">{{ gameSheet === 'edit' ? 'Game Details' : 'New Game' }}</h2>
+          <h2 class="font-stencil text-lg font-bold">
+            {{ gameSheet === 'new-scout' ? 'New Scouting Report' : sheetIsScout ? 'Matchup Details' : gameSheet === 'edit' ? 'Game Details' : 'New Game' }}
+          </h2>
           <button class="btn-ghost p-1.5" title="Cancel" aria-label="Cancel" @click="gameSheet = null"><XMarkIcon class="h-5 w-5" /></button>
         </div>
         <div class="flex flex-col gap-3">
+          <div v-if="sheetIsScout">
+            <label class="label" for="ng-scouted">Team being scouted</label>
+            <input
+              id="ng-scouted"
+              v-model="sheetScoutedTeam"
+              class="input"
+              placeholder="e.g. Hartselle"
+              list="ng-scouted-teams"
+              autofocus
+              autocomplete="off"
+            />
+            <datalist id="ng-scouted-teams">
+              <option v-for="t in knownScoutTeams" :key="t" :value="t" />
+            </datalist>
+          </div>
           <div>
-            <label class="label" for="ng-opponent">Opponent</label>
+            <label class="label" for="ng-opponent">{{ sheetIsScout ? 'Playing against' : 'Opponent' }}</label>
             <input
               id="ng-opponent"
               v-model="sheetOpponent"
               class="input"
               placeholder="e.g. West Morgan"
-              autofocus
+              :autofocus="!sheetIsScout"
               autocomplete="off"
               @keyup.enter="onSubmitGameSheet"
             />
           </div>
           <div class="flex gap-3">
             <div class="grow">
-              <label class="label" for="ng-date">Date</label>
+              <label class="label" for="ng-date">{{ sheetIsScout ? 'Date played' : 'Date' }}</label>
               <input id="ng-date" v-model="sheetDate" type="date" class="input" />
             </div>
             <div class="grow">
@@ -937,15 +1177,33 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
               <input id="ng-location" v-model="sheetLocation" class="input" placeholder="Home, Away, gym…" autocomplete="off" />
             </div>
           </div>
-          <div>
+          <div v-if="sheetIsScout">
+            <span class="label">Final score (optional)</span>
+            <div class="flex items-center gap-2">
+              <input
+                v-model.number="sheetTeamScore"
+                type="number" min="0" inputmode="numeric" class="input w-20 text-center"
+                :aria-label="`${sheetScoutedTeam || 'Scouted team'} score`"
+                :placeholder="(sheetScoutedTeam || 'Them').slice(0, 4)"
+              />
+              <span class="text-ink-500">–</span>
+              <input
+                v-model.number="sheetOppScore"
+                type="number" min="0" inputmode="numeric" class="input w-20 text-center"
+                :aria-label="`${sheetOpponent || 'Opponent'} score`"
+                :placeholder="(sheetOpponent || 'Opp').slice(0, 4)"
+              />
+            </div>
+          </div>
+          <div v-else>
             <label class="label" for="ng-notes">Notes (optional)</label>
             <textarea id="ng-notes" v-model="sheetNotes" rows="2" class="input resize-none" placeholder="Tournament, keys to the game…" />
           </div>
           <button
             class="btn-primary py-3 text-sm font-semibold"
-            :disabled="!sheetOpponent.trim() || !sheetDate || savingGame"
+            :disabled="!sheetValid || savingGame"
             @click="onSubmitGameSheet"
-          >{{ savingGame ? 'Saving…' : gameSheet === 'edit' ? 'Save details' : 'Start game' }}</button>
+          >{{ savingGame ? 'Saving…' : gameSheet === 'edit' ? 'Save details' : gameSheet === 'new-scout' ? 'Start tracking' : 'Start game' }}</button>
         </div>
       </div>
     </Transition>
@@ -976,10 +1234,13 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         class="fixed bottom-0 left-0 top-0 z-50 w-72 overflow-y-auto border-r border-ink-700 bg-ink-900 p-4 shadow-2xl"
       >
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="font-stencil text-lg font-bold">Roster</h2>
+          <h2 class="font-stencil text-lg font-bold">{{ isScout ? `${scoutTeam} Roster` : 'Roster' }}</h2>
           <button class="btn-ghost p-1.5" title="Close" aria-label="Close" @click="showRosterDrawer = false"><XMarkIcon class="h-5 w-5" /></button>
         </div>
 
+        <p v-if="isScout && !activePlayers.length" class="mb-4 text-sm text-ink-500">
+          Add {{ scoutTeam }}'s players by number and name. Every report on {{ scoutTeam }} shares this roster.
+        </p>
         <ul class="mb-4 space-y-1 text-sm">
           <li v-for="p in activePlayers" :key="p.id">
             <template v-if="editingPlayerId === p.id">
@@ -1050,4 +1311,12 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
       </div>
     </Transition>
   </Teleport>
+
+  <ScoutNotesDrawer
+    v-if="notesGame"
+    :game="notesGame"
+    :open="showScoutNotes"
+    @close="showScoutNotes = false"
+    @saved="onNotesSaved"
+  />
 </template>

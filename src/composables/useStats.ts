@@ -4,7 +4,11 @@ import type { Game, Player, StatEvent, StatType, SubEvent } from '@/types'
 
 // Module-level singletons — state is shared across all component instances.
 // Intentional for a single-coach app; revisit if multi-user context is ever needed.
+// Our roster. Scouted opponents' players share the table (so their stat and
+// shot events keep foreign keys) but are kept apart in scoutPlayers, so the
+// roster, season totals and play editor never see them.
 const players = ref<Player[]>([])
+const scoutPlayers = ref<Player[]>([])
 const games = ref<Game[]>([])
 const events = ref<StatEvent[]>([])
 const allEvents = ref<StatEvent[]>([])
@@ -23,8 +27,13 @@ export function useStats() {
       .select('*')
       .order('number', { ascending: true, nullsFirst: false })
       .order('name', { ascending: true })
-    if (err) error.value = err.message
-    else players.value = (data ?? []) as Player[]
+    if (err) {
+      error.value = err.message
+      return
+    }
+    const all = (data ?? []) as Player[]
+    players.value = all.filter((p) => !p.scout_team)
+    scoutPlayers.value = all.filter((p) => !!p.scout_team)
   }
 
   async function fetchGames() {
@@ -220,6 +229,7 @@ export function useStats() {
 
   return {
     players,
+    scoutPlayers,
     games,
     events,
     allEvents,
