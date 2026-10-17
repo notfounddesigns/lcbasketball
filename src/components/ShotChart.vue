@@ -10,6 +10,8 @@ const props = defineProps<{
   gameId: string
   playerId: string | null
   period: number
+  // View-only (a finished scouting report): no adding or deleting shots.
+  readonly?: boolean
 }>()
 
 const { shots, fetchShots, recordShot, deleteShot } = useShotChart()
@@ -86,6 +88,13 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => resizeObs?.disconnect())
+
+// The legend sits in the court's bottom-left corner (the backcourt side,
+// where shots are rare), wherever the letterboxed court ends up.
+const legendPos = computed(() => {
+  const { scale, offsetX, offsetY } = fitCourt(svgBox.value.w, svgBox.value.h)
+  return { left: `${offsetX + 8}px`, top: `${offsetY + VB_H * scale - 30}px` }
+})
 
 // Where the Made/Miss popup sits, in px within the chart wrapper. Derived from
 // the live element size rather than captured at tap time, so it stays anchored
@@ -195,6 +204,7 @@ const shotTypeLabel = computed(() => {
 })
 
 function onCourtClick(e: MouseEvent) {
+  if (props.readonly) return
   if (selectedShotId.value) {
     selectedShotId.value = null
     return
@@ -257,6 +267,7 @@ function cancelPending() {
 }
 
 function onShotClick(shot: ShotEvent) {
+  if (props.readonly) return
   pendingShot.value = null
   selectedShotId.value = selectedShotId.value === shot.id ? null : shot.id
 }
@@ -296,23 +307,24 @@ function shotPath(shot: ShotEvent): string {
 
 <template>
   <div class="flex flex-col gap-2 w-full shotchart-container lg:w-1/2">
-    <!-- Period filter | shooting summary + legend -->
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-      <div class="flex items-center gap-1" role="group" aria-label="Period filter">
+    <!-- Period filter | shooting summary: always one row (scrolls sideways
+         rather than wrapping on a narrow phone) -->
+    <div class="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap text-[11px]">
+      <div class="flex shrink-0 items-center gap-1" role="group" aria-label="Period filter">
         <button
           v-for="f in PERIOD_FILTERS"
           :key="f.value"
-          class="rounded px-2 py-1 text-[11px] font-semibold transition"
+          class="rounded px-1.5 py-1 font-semibold transition"
           :class="periodFilter === f.value ? 'bg-ink-500 text-chalk' : 'bg-ink-800 text-ink-500 hover:text-chalk'"
           :aria-pressed="periodFilter === f.value"
           @click="periodFilter = f.value; selectedShotId = null"
         >{{ f.label }}</button>
       </div>
-      <div class="ml-auto flex flex-wrap items-center gap-1.5">
+      <div class="ml-auto flex shrink-0 items-center gap-1">
         <span
           v-for="row in summaryRows"
           :key="row.label"
-          class="inline-flex items-baseline gap-1.5 rounded-lg bg-ink-800 px-2 py-1"
+          class="inline-flex items-baseline gap-1 rounded-md bg-ink-800 px-1.5 py-1"
         >
           <span class="font-semibold text-ink-500">{{ row.label }}</span>
           <span class="font-mono text-chalk">{{ row.made }}/{{ row.total }}</span>
@@ -320,21 +332,25 @@ function shotPath(shot: ShotEvent): string {
             {{ row.total ? `${row.pct}%` : '—' }}
           </span>
         </span>
-        <span class="inline-flex items-center gap-2.5 pl-1 text-[11px] text-ink-500" :title="playerId ? 'Tap the court to add a shot' : 'Select a player to add shots'">
-          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
-          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
-          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
-        </span>
       </div>
     </div>
 
     <!-- Court SVG -->
     <div class="shotchart-court relative w-full">
+      <div
+        :style="legendPos"
+        class="pointer-events-none absolute z-10 flex items-center gap-2.5 rounded-md bg-ink-900/80 px-2 py-1 text-[11px] text-ink-500"
+        :title="readonly ? undefined : playerId ? 'Tap the court to add a shot' : 'Select a player to add shots'"
+      >
+        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
+        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
+        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
+      </div>
       <svg
         ref="svgRef"
         :viewBox="`0 0 ${VB_W} ${VB_H}`"
         class="w-full rounded-lg bg-ink-900 shotchart"
-        :class="playerId ? 'cursor-crosshair' : 'cursor-default'"
+        :class="playerId && !readonly ? 'cursor-crosshair' : 'cursor-default'"
         preserveAspectRatio="xMidYMin meet"
         @click="onCourtClick"
       >

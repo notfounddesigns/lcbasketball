@@ -393,3 +393,24 @@ alter table public.sub_events add constraint sub_events_player_id_in_fkey
 alter table public.sub_events drop constraint if exists sub_events_player_id_out_fkey;
 alter table public.sub_events add constraint sub_events_player_id_out_fkey
   foreign key (player_id_out) references public.players(id) on delete restrict;
+
+-- ============================================================
+-- Migration: stat-tracked scouting reports
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- A scouting report is a game row flagged is_scouting: the coach tracks
+-- another team's stats (from film or in the stands) with the same tracker.
+-- For these rows scouted_team is who is being scouted, opponent is who they
+-- played, and our_score / opp_score are the scouted team's / opponent's score.
+alter table public.games add column if not exists is_scouting       boolean not null default false;
+alter table public.games add column if not exists scouted_team      text;
+alter table public.games add column if not exists scout_key_players text;
+alter table public.games add column if not exists scout_offense     text;
+alter table public.games add column if not exists scout_defense     text;
+
+-- Scouted players live in the players table (so stat and shot events keep
+-- their foreign keys) but carry the team they belong to; null = our roster.
+-- Reports on the same team share its roster.
+alter table public.players add column if not exists scout_team text;
+create index if not exists players_scout_team_idx on public.players (scout_team);

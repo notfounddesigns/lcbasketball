@@ -105,8 +105,9 @@ input[type='number']::-webkit-inner-spin-button {
 /* The live tracker fills the screen under the sticky game header. */
 .boxscore-shotchart-container,
 .stat-column {
-  /* ≈ app padding + game header above, tab bar (62px + safe area) below */
-  height: calc(100dvh - 128px - 70px - env(safe-area-inset-bottom, 0px));
+  /* --tracker-top is measured (the game header can wrap to two lines);
+     the tab bar (62px + safe area) is below. */
+  height: calc(100dvh - var(--tracker-top, 128px) - 70px - env(safe-area-inset-bottom, 0px));
 }
 
 /* Phones: the fixed stat pad covers the bottom of the panel, so let the box
@@ -169,4 +170,25 @@ input[type='number']::-webkit-inner-spin-button {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* Sideways-scrolling rows that shouldn't show a scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scouting report: the shot chart sits in normal page flow (no viewport-sized
+   panel), so it keeps the court's own aspect ratio. */
+.scout-shotchart .shotchart-container,
+.scout-shotchart .shotchart-court {
+  flex: none;
+  height: auto;
+  width: 100%;
+}
+.scout-shotchart .shotchart {
+  height: auto;
+  aspect-ratio: 500 / 470;
 }

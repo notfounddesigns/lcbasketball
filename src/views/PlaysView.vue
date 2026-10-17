@@ -86,7 +86,8 @@ const showCategoryGrid = computed(
   () => activeTab.value === 'playbook' && !selectedCategory.value && !search.value.trim(),
 )
 
-// Scouting reports are plays flagged is_scouting; the editor pre-ticks the flag.
+// Scouted plays (an opponent's sets) are plays flagged is_scouting; the editor
+// pre-ticks the flag. Stat-tracked scouting reports live on the Stats page.
 function newScoutingReport() {
   router.push({ path: '/plays/new', query: { scouting: '1' } })
 }
@@ -195,13 +196,13 @@ function onDragEnd() {
     <header class="mb-4 flex items-center justify-between">
       <div>
         <h1 v-if="activeTab === 'playbook'" class="font-stencil text-2xl font-extrabold tracking-tight">Playbook</h1>
-        <h1 v-else class="font-stencil text-2xl font-extrabold tracking-tight">Scouting Reports</h1>
+        <h2 v-else class="font-stencil text-lg font-bold tracking-tight">Scouted Plays</h2>
       </div>
       <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" title="New play" aria-label="New play" @click="newPlay">
         <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Play</span>
       </button>
-      <button v-else class="btn-primary capitalize" title="New scouting report" aria-label="New scouting report" @click="newScoutingReport">
-        <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">Scouting Report</span>
+      <button v-else class="btn-primary capitalize" title="Diagram a scouted play" aria-label="Diagram a scouted play" @click="newScoutingReport">
+        <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">Scouted Play</span>
       </button>
     </header>
 
@@ -211,7 +212,7 @@ function onDragEnd() {
         class="input"
         :placeholder="
           activeTab === 'scouting'
-            ? 'Search scouting reports…'
+            ? 'Search scouted plays…'
             : selectedCategory
               ? `Search ${selectedLabel}…`
               : 'Search all plays…'
@@ -257,8 +258,8 @@ function onDragEnd() {
 
     <template v-else-if="!loading">
       <div v-if="activeTab === 'scouting' && !tabPlays.length" class="card p-10 text-center">
-        <p class="mb-3 text-ink-500">No scouting reports yet.</p>
-        <button class="btn-primary" @click="newScoutingReport">Add scouting report</button>
+        <p class="mb-3 text-ink-500">No scouted plays yet — diagram an opponent's sets here.</p>
+        <button class="btn-primary" @click="newScoutingReport">Diagram a scouted play</button>
       </div>
 
       <div v-else-if="!search && selectedCategory && !filteredPlays.length" class="card p-10 text-center">
