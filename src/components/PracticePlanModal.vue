@@ -298,7 +298,7 @@ async function onSubmit() {
           <!-- date + practice window -->
           <div>
             <div class="flex flex-col gap-2 sm:flex-row">
-              <div class="grow">
+              <div class="min-w-0 grow">
                 <label class="label" for="plan-date">Date</label>
                 <input id="plan-date" v-model="date" type="date" class="input" />
               </div>

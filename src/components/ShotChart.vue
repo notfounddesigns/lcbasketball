@@ -5,7 +5,7 @@ import { useStats } from '@/composables/useStats'
 import type { StatType, ShotEvent, StatEvent } from '@/types'
 import { TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { periodLabel } from '@/lib/stats-utils'
-import { HEAT_SCALE, ZONES, zoneDividers, zoneFill, zoneShapes, zoneStats } from '@/lib/shot-zones'
+import { ARC_PATH, CORNERS_PATH, COURT_PATH, HEAT_SCALE, PAINT_PATH, ZONES, isThreeAt, zoneDividers, zoneFill, zoneShapes, zoneStats } from '@/lib/shot-zones'
 
 const props = defineProps<{
   // The game whose shots are loaded and recorded; null when the chart shows
@@ -104,6 +104,9 @@ onBeforeUnmount(() => resizeObs?.disconnect())
 
 // ---------- zone heat map ----------
 const ZONE_SHAPES = zoneShapes()
+// SVG ids are document-wide; several charts can be on screen at once.
+const uid = `shotchart-${Math.random().toString(36).slice(2, 9)}`
+const maskUrl = (m: 'mid' | 'three' | null) => (m ? `url(#${uid}-${m})` : undefined)
 const ZONE_DIVIDERS = zoneDividers()
 const ZONE_LABEL = new Map(ZONES.map((z) => [z.id, z.label]))
 const zoneData = computed(() => {
@@ -196,16 +199,10 @@ function svgToNorm(svgX: number, svgY: number) {
   return { x: svgX / VB_W, y: svgY / VB_H }
 }
 
-// Determine if a shot is a 3-pointer, using the same geometry as the drawn line.
+// Determine if a shot is a 3-pointer, using the same geometry as the drawn line
+// (shared with the zone heat map so a shot's zone and its stat always agree).
 function isThreePointer(nx: number, ny: number): boolean {
-  const svgX = nx * VB_W
-  const svgY = ny * VB_H
-  // Corner 3: beyond the vertical corner lines
-  if (svgX <= THREE_CORNER_X || svgX >= VB_W - THREE_CORNER_X) return true
-  // Arc 3: beyond the arc radius measured from the basket
-  const dx = svgX - VB_W / 2
-  const dy = svgY - BASKET_INSET
-  return Math.hypot(dx, dy) > THREE_R
+  return isThreeAt(nx, ny)
 }
 
 // Classify a court tap as a 2FG or 3FG. Free throws aren't inferred from
@@ -402,12 +399,28 @@ function shotPath(shot: ShotEvent): string {
         preserveAspectRatio="xMidYMin meet"
         @click="onCourtClick"
       >
-        <!-- Zone heat map (under the court lines) -->
-        <g v-if="view === 'zones'" pointer-events="none">
+        <!-- Zone heat map (under the court lines), kept inside the court -->
+        <defs v-if="view === 'zones'">
+          <clipPath :id="`${uid}-court`"><path :d="COURT_PATH" /></clipPath>
+          <!-- mid-range: inside the arc, outside the paint -->
+          <mask :id="`${uid}-mid`" maskUnits="userSpaceOnUse" x="0" y="0" :width="VB_W" :height="VB_H">
+            <path :d="ARC_PATH" fill="white" />
+            <path :d="PAINT_PATH" fill="black" />
+          </mask>
+          <!-- threes beyond the arc, minus the corner boxes -->
+          <mask :id="`${uid}-three`" maskUnits="userSpaceOnUse" x="0" y="0" :width="VB_W" :height="VB_H">
+            <path :d="COURT_PATH" fill="white" />
+            <path :d="ARC_PATH" fill="black" />
+            <path :d="CORNERS_PATH" fill="black" />
+          </mask>
+        </defs>
+        <g v-if="view === 'zones'" pointer-events="none" :clip-path="`url(#${uid}-court)`">
           <path
             v-for="z in zoneData"
             :key="z.id"
             :d="z.path"
+            :mask="maskUrl(z.mask)"
+            :fill-rule="z.evenOdd ? 'evenodd' : undefined"
             :fill="z.fill.color"
             :fill-opacity="z.fill.opacity"
           />
