@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAccess } from '@/composables/useAccess'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Play } from '@/types'
@@ -17,6 +18,8 @@ const { confirm } = useConfirm()
 // The playbook lives on the Plays tab; the same list in "scouting" form is
 // embedded on the Stats page (Scouting tab), next to the games it informs.
 const props = defineProps<{ scouting?: boolean }>()
+// Players browse the playbook; only coaches and admins change it.
+const { canEdit } = useAccess()
 type Tab = 'playbook' | 'scouting'
 const activeTab = computed<Tab>(() => (props.scouting ? 'scouting' : 'playbook'))
 const search = ref('')
@@ -198,10 +201,10 @@ function onDragEnd() {
         <h1 v-if="activeTab === 'playbook'" class="font-stencil text-2xl font-extrabold tracking-tight">Playbook</h1>
         <h2 v-else class="font-stencil text-lg font-bold tracking-tight">Scouted Plays</h2>
       </div>
-      <button v-if="activeTab === 'playbook'" class="btn-primary capitalize" title="New play" aria-label="New play" @click="newPlay">
+      <button v-if="activeTab === 'playbook' && canEdit" class="btn-primary capitalize" title="New play" aria-label="New play" @click="newPlay">
         <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Play</span>
       </button>
-      <button v-else class="btn-primary capitalize" title="Diagram a scouted play" aria-label="Diagram a scouted play" @click="newScoutingReport">
+      <button v-else-if="canEdit" class="btn-primary capitalize" title="Diagram a scouted play" aria-label="Diagram a scouted play" @click="newScoutingReport">
         <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">Scouted Play</span>
       </button>
     </header>
@@ -259,12 +262,12 @@ function onDragEnd() {
     <template v-else-if="!loading">
       <div v-if="activeTab === 'scouting' && !tabPlays.length" class="card p-10 text-center">
         <p class="mb-3 text-ink-500">No scouted plays yet — diagram an opponent's sets here.</p>
-        <button class="btn-primary" @click="newScoutingReport">Diagram a scouted play</button>
+        <button v-if="canEdit" class="btn-primary" @click="newScoutingReport">Diagram a scouted play</button>
       </div>
 
       <div v-else-if="!search && selectedCategory && !filteredPlays.length" class="card p-10 text-center">
         <p class="mb-3 text-ink-500">Nothing in {{ selectedLabel }} yet.</p>
-        <button class="btn-primary" @click="newPlay">
+        <button v-if="canEdit" class="btn-primary" @click="newPlay">
           {{ selectedCategory === 'Drill' ? 'Diagram a drill' : 'Diagram a play' }}
         </button>
       </div>
@@ -323,13 +326,13 @@ function onDragEnd() {
               @click="openPreview(p, p.videos?.length ? 'video' : 'diagram')">
               <PlayIcon class="h-4 w-4" />
             </button>
-            <button class="btn-ghost py-1.5 text-xs" title="Open editor" @click="router.push(`/plays/${p.id}`)">
+            <button v-if="canEdit" class="btn-ghost py-1.5 text-xs" title="Open editor" @click="router.push(`/plays/${p.id}`)">
               <PencilIcon class="h-4 w-4" />
             </button>
-            <button class="btn-ghost py-1.5 text-xs" title="Duplicate" @click="onDuplicate(p)">
+            <button v-if="canEdit" class="btn-ghost py-1.5 text-xs" title="Duplicate" @click="onDuplicate(p)">
               <DocumentDuplicateIcon class="h-4 w-4" />
             </button>
-            <button class="btn-danger py-1.5 text-xs" @click="onDelete(p)">
+            <button v-if="canEdit" class="btn-danger py-1.5 text-xs" @click="onDelete(p)">
               <TrashIcon class="h-4 w-4" />
             </button>
           </div>

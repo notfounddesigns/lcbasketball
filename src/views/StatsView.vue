@@ -6,6 +6,7 @@ import { useStats } from '@/composables/useStats'
 import { useShotChart } from '@/composables/useShotChart'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
+import { useAccess } from '@/composables/useAccess'
 import { buildBoxScore, buildSeasonStats, boxScoreToCsv, downloadCsv, formatPct, periodLabel, seasonStatsToCsv, teamTotals } from '@/lib/stats-utils'
 import ShotChart from '@/components/ShotChart.vue'
 import PlaysView from '@/views/PlaysView.vue'
@@ -26,6 +27,9 @@ const {
 } = useStats()
 const { shots, deleteShot, fetchShotsForGames } = useShotChart()
 const { confirm } = useConfirm()
+// Players get a read-only view: games open as a box score + shot chart, and
+// there's no tracker, scouting or roster editing.
+const { canEdit } = useAccess()
 const { toast } = useToast()
 
 // Field goals are recorded alongside a shot_event on the shot chart, so
@@ -43,6 +47,7 @@ type Mode = 'game' | 'season' | 'scouting'
 const mode = computed<Mode>({
   get: () => {
     const m = route.query.mode
+    if (m === 'scouting' && !canEdit.value) return 'game'
     return m === 'season' || m === 'scouting' ? m : 'game'
   },
   set: (m) => {
@@ -99,7 +104,7 @@ onMounted(async () => {
   await Promise.all([fetchPlayers(), fetchGames(), fetchAllEvents()])
   const live = readLiveGame()
   const game = live && games.value.find((g) => g.id === live.gameId)
-  if (game && !activeGame.value) {
+  if (game && !activeGame.value && canEdit.value) {
     if (game.is_scouting && mode.value !== 'scouting') mode.value = 'scouting'
     await openGame(game)
   }
@@ -316,6 +321,13 @@ async function openGame(g: Game) {
   const resume = live?.gameId === g.id ? live.period : latest
   maxPeriod.value = Math.max(5, latest, resume)
   activePeriod.value = resume
+}
+
+// Players open a game as a read-only box score and shot chart.
+const viewingGame = ref<Game | null>(null)
+async function viewGame(g: Game) {
+  viewingGame.value = g
+  await fetchEvents(g.id)
 }
 
 async function onDeleteGame(g: Game) {
@@ -789,6 +801,7 @@ watch(
           @click="mode = 'season'"
         >Season</button>
         <button
+          v-if="canEdit"
           class="rounded-md px-3 py-1 text-xs font-semibold transition"
           :class="mode === 'scouting' ? 'bg-rim text-white' : 'text-ink-500 hover:text-chalk'"
           @click="mode = 'scouting'"
@@ -805,7 +818,7 @@ watch(
       </button>
 
       <button
-        v-if="mode === 'game' && !inGame"
+        v-if="mode === 'game' && !inGame && canEdit"
         class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs bg-rim hover:bg-rim/80 sm:px-3"
         title="New game" aria-label="New game"
         @click="openNewGameSheet"
@@ -835,17 +848,28 @@ watch(
     <!-- ==================== GAME MODE ==================== -->
     <template v-if="mode === 'game' || inGame">
 
+      <!-- A game opened read-only (players) -->
+      <ScoutReportView
+        v-if="!inGame && viewingGame"
+        :game="viewingGame"
+        :roster="players"
+        :events="events"
+        readonly
+        @back="viewingGame = null"
+      />
+
       <!-- No open game: game cards grid -->
-      <template v-if="!inGame">
+      <template v-else-if="!inGame">
         <div v-if="!ourGames.length" class="flex h-48 items-center justify-center rounded-2xl border border-dashed border-ink-700 text-sm text-ink-500">
-          No games yet — tap <strong class="mx-1 text-chalk">New Game</strong> to start tracking.
+          <template v-if="canEdit">No games yet — tap <strong class="mx-1 text-chalk">New Game</strong> to start tracking.</template>
+          <template v-else>No games yet.</template>
         </div>
         <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div
             v-for="g in ourGames"
             :key="g.id"
             class="group relative cursor-pointer rounded-2xl border border-ink-700 bg-ink-800 p-4 transition hover:border-ink-600 hover:bg-ink-700"
-            @click="openGame(g)">
+            @click="canEdit ? openGame(g) : viewGame(g)">
             <p class="font-stencil font-bold leading-tight">vs {{ g.opponent }}</p>
             <p class="mt-1 text-xs text-ink-500">{{ g.played_on }}<template v-if="g.location"> · {{ g.location }}</template></p>
             <p v-if="hasFinal(g)" class="mt-2 font-mono text-sm">
@@ -855,6 +879,7 @@ watch(
               >{{ resultLabel(g) }}</span>{{ g.our_score }}–{{ g.opp_score }}
             </p>
             <button
+              v-if="canEdit"
               class="absolute right-2 top-2 rounded p-1 text-[10px] text-red-500 hover:text-red-300 group-hover:block"
               @click.stop="onDeleteGame(g)">
               <TrashIcon class="h-4 w-4" />

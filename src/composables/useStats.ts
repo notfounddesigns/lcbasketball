@@ -1,6 +1,9 @@
 import { ref } from 'vue'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import type { Game, Player, StatEvent, StatType, SubEvent } from '@/types'
+import { useAccess } from '@/composables/useAccess'
+
+const { teamScope, teamColumns, migrated, currentTeamId } = useAccess()
 
 // Module-level singletons — state is shared across all component instances.
 // Intentional for a single-coach app; revisit if multi-user context is ever needed.
@@ -22,18 +25,41 @@ export function useStats() {
       error.value = 'Supabase not configured — see README.'
       return
     }
-    const { data, error: err } = await supabase
-      .from('players')
-      .select('*')
-      .order('number', { ascending: true, nullsFirst: false })
-      .order('name', { ascending: true })
-    if (err) {
-      error.value = err.message
+    const scope = await teamScope()
+    if (scope.skip) {
+      players.value = []
+      scoutPlayers.value = []
       return
     }
-    const all = (data ?? []) as Player[]
-    players.value = all.filter((p) => !p.scout_team)
-    scoutPlayers.value = all.filter((p) => !!p.scout_team)
+    const order = <T extends { order: (c: string, o: object) => T }>(q: T) =>
+      q.order('number', { ascending: true, nullsFirst: false }).order('name', { ascending: true })
+
+    if (!scope.teamId) {
+      // Before the roles migration: one shared roster.
+      const { data, error: err } = await order(supabase.from('players').select('*'))
+      if (err) {
+        error.value = err.message
+        return
+      }
+      const all = (data ?? []) as Player[]
+      players.value = all.filter((p) => !p.scout_team)
+      scoutPlayers.value = all.filter((p) => !!p.scout_team)
+      return
+    }
+    // The team's roster (a player can be on several teams), plus the
+    // opponents' players this team has scouted.
+    const [roster, scouted] = await Promise.all([
+      order(supabase.from('players').select('*, team_players!inner(team_id)').eq('team_players.team_id', scope.teamId)),
+      order(supabase.from('players').select('*').eq('scout_for_team', scope.teamId)),
+    ])
+    if (roster.error || scouted.error) {
+      error.value = (roster.error ?? scouted.error)!.message
+      return
+    }
+    players.value = ((roster.data ?? []) as (Player & { team_players?: unknown })[])
+      .map(({ team_players: _tp, ...p }) => p as Player)
+      .filter((p) => !p.scout_team)
+    scoutPlayers.value = (scouted.data ?? []) as Player[]
   }
 
   async function fetchGames() {
@@ -41,10 +67,14 @@ export function useStats() {
       error.value = 'Supabase not configured — see README.'
       return
     }
-    const { data, error: err } = await supabase
-      .from('games')
-      .select('*')
-      .order('played_on', { ascending: false })
+    const scope = await teamScope()
+    if (scope.skip) {
+      games.value = []
+      return
+    }
+    let query = supabase.from('games').select('*')
+    if (scope.teamId) query = query.eq('team_id', scope.teamId)
+    const { data, error: err } = await query.order('played_on', { ascending: false })
     if (err) error.value = err.message
     else games.value = (data ?? []) as Game[]
   }
@@ -70,10 +100,20 @@ export function useStats() {
   }
 
   async function addPlayer(p: Omit<Player, 'id'>): Promise<Player | null> {
-    const { data, error: err } = await supabase.from('players').insert(p).select().single()
+    const teamId = migrated.value ? currentTeamId.value : null
+    // A scouted opponent's player belongs to the team that scouted them; one
+    // of ours joins the current team's roster.
+    const row = p.scout_team && teamId ? { ...p, scout_for_team: teamId } : p
+    const { data, error: err } = await supabase.from('players').insert(row).select().single()
     if (err) {
       error.value = err.message
       return null
+    }
+    if (teamId && !p.scout_team) {
+      const { error: linkErr } = await supabase
+        .from('team_players')
+        .insert({ team_id: teamId, player_id: (data as Player).id })
+      if (linkErr) error.value = linkErr.message
     }
     await fetchPlayers()
     return data as Player
@@ -95,7 +135,7 @@ export function useStats() {
       return null
     }
     g = { ...g, opponent }
-    const { data, error: err } = await supabase.from('games').insert(g).select().single()
+    const { data, error: err } = await supabase.from('games').insert({ ...g, ...teamColumns() }).select().single()
     if (err) {
       error.value = err.message
       return null
@@ -124,12 +164,19 @@ export function useStats() {
   // silently drop out of the season totals.
   async function fetchAllEvents() {
     if (!isSupabaseConfigured) return
+    const scope = await teamScope()
+    if (scope.skip) {
+      allEvents.value = []
+      return
+    }
     const PAGE = 1000
     const rows: StatEvent[] = []
     for (let from = 0; ; from += PAGE) {
-      const { data, error: err } = await supabase
-        .from('stat_events')
-        .select('*')
+      // The current team's games only (inner join on games.team_id).
+      let query = scope.teamId
+        ? supabase.from('stat_events').select('*, games!inner(team_id)').eq('games.team_id', scope.teamId)
+        : supabase.from('stat_events').select('*')
+      const { data, error: err } = await query
         .order('created_at', { ascending: true })
         .order('id', { ascending: true }) // tie-break so pages never overlap or skip
         .range(from, from + PAGE - 1)

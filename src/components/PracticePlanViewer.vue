@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAccess } from '@/composables/useAccess'
 import { computed, ref } from 'vue'
 import type { PracticePlan } from '@/types'
 import { blockRanges, blockTitle, formatDuration, formatPlanDate, formatTimeWindow, totalMinutes } from '@/lib/practice-utils'
@@ -8,6 +9,7 @@ import { DocumentDuplicateIcon, PencilIcon, PrinterIcon } from '@heroicons/vue/2
 
 const props = defineProps<{ plan: PracticePlan }>()
 const emit = defineEmits<{ close: []; edit: []; duplicate: []; print: [] }>()
+const { canEdit } = useAccess()
 
 const items = computed(() => props.plan.items ?? [])
 const ranges = computed(() => blockRanges(items.value, props.plan.start_time))
@@ -39,10 +41,10 @@ useDialog(dialogEl, () => emit('close'))
             {{ items.length }} block{{ items.length === 1 ? '' : 's' }} · {{ formatDuration(totalMinutes(items)) }}
           </p>
         </div>
-        <button class="btn-ghost shrink-0 py-1.5 text-sm" title="Edit plan" aria-label="Edit plan" @click="emit('edit')">
+        <button v-if="canEdit" class="btn-ghost shrink-0 py-1.5 text-sm" title="Edit plan" aria-label="Edit plan" @click="emit('edit')">
           <PencilIcon class="h-4 w-4" />
         </button>
-        <button class="btn-ghost shrink-0 py-1.5 text-sm" title="Duplicate plan" aria-label="Duplicate plan" @click="emit('duplicate')">
+        <button v-if="canEdit" class="btn-ghost shrink-0 py-1.5 text-sm" title="Duplicate plan" aria-label="Duplicate plan" @click="emit('duplicate')">
           <DocumentDuplicateIcon class="h-4 w-4" />
         </button>
         <button class="btn-ghost shrink-0 py-1.5 text-sm" title="Export for printing" aria-label="Export for printing" @click="emit('print')">

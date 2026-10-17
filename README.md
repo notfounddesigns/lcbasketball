@@ -135,17 +135,44 @@ they were headed). The guard is UX only — the real enforcement is the
 `authenticated` RLS policies, so a faked client-side session still reads
 nothing.
 
-Access is limited to emails on the `staff` allow-list: every RLS policy (and
-the clip storage policies) checks `public.is_staff()`. A valid login that
-isn't on the list is told so at sign-in and signed straight back out.
-Allow-listed coaches share one program's data — there's no per-coach scoping.
+### Roles and teams
 
-**Password resets** aren't in the app. Supabase can send a reset link
-(`resetPasswordForEmail`), but that needs a redirect target and a "set a new
-password" screen; for now, reset from **Authentication → Users** in the
-dashboard.
+Every account has a profile with a role, and data belongs to teams (e.g. Boys
+Varsity, Boys JV, Girls Varsity):
+
+| Role   | Sees                                   | Can change                                              |
+|--------|----------------------------------------|---------------------------------------------------------|
+| Admin  | every team                             | everything; invites coaches, admins and players; roles  |
+| Coach  | teams they coach or created            | those teams' plays, games, stats, plans, rosters; creates teams and players; adds co-coaches; invites player logins |
+| Player | teams they're on (no scouting reports) | nothing — read-only                                     |
+
+A team can have several coaches and a player can be on several teams. Plays,
+games and practice plans carry a `team_id`; stats, shots, clips and plan
+blocks follow their parent. All of this is enforced by RLS
+(`can_view_team` / `can_edit_team` in `supabase/schema.sql`); the UI only hides
+what a role can't use. The Account tab switches the current team and manages
+teams, rosters and people.
+
+**Setting it up** (once):
+
+1. Run the "roles (admin / coach / player) and teams" migration at the end of
+   `supabase/schema.sql` in the SQL Editor. Existing data moves to a team
+   named "Boys Varsity" (rename it in Account) with every current coach on it.
+2. Make yourself an admin:
+   `update public.profiles set role = 'admin' where email = 'you@example.com';`
+3. Deploy the invite function (needs the [Supabase CLI](https://supabase.com/docs/guides/cli)):
+   `supabase functions deploy invite-user --project-ref <your-project-ref>`
+4. In **Authentication → URL Configuration**, add the site's URL (e.g.
+   `https://www.lcbasketball.com/`) to **Redirect URLs** so invite and reset
+   links can return to the app. Keep public sign-ups off.
+
+**Invites and passwords.** Admins invite people from Account → People; coaches
+invite a roster player's login from the envelope icon. The `invite-user` Edge
+Function checks the caller's role, then sends Supabase's invite email. The
+link signs the person in and opens **Choose your password**. "Forgot
+password?" on the login screen sends a reset link that lands on the same page.
 
 ## Remaining gaps
 
-1. **No per-user ownership.** Add a `user_id` column and owner-scoped policies
-   if two coaching staffs ever share one project.
+1. **Teams aren't seasons.** A new season is a new team (e.g. "Boys Varsity
+   2027"); there's no archive or carry-over of rosters yet.

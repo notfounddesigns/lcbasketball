@@ -5,9 +5,11 @@ import { buildBoxScore, formatPct, periodLabel, teamTotals } from '@/lib/stats-u
 import ShotChart from '@/components/ShotChart.vue'
 import { ArrowLeftIcon, ChartBarIcon, DocumentTextIcon, PencilIcon, UserGroupIcon } from '@heroicons/vue/24/outline'
 
-// A scouting report at a glance: matchup, the coach's notes, the scouted team's
-// box score and shot chart. Tracking more stats happens back in the tracker.
-const props = defineProps<{ game: Game; roster: Player[]; events: StatEvent[] }>()
+// A game at a glance: matchup, box score and shot chart, plus the coach's notes
+// for a scouting report. Tracking more stats happens back in the tracker.
+// `readonly` (players) hides everything that edits; it's also how players see
+// our own games.
+const props = defineProps<{ game: Game; roster: Player[]; events: StatEvent[]; readonly?: boolean }>()
 defineEmits<{ back: []; track: []; 'edit-details': []; 'edit-notes': []; team: [] }>()
 
 const period = ref<number | 'all'>('all')
@@ -49,26 +51,26 @@ const hasNotes = computed(() => NOTES.some((n) => props.game[n.key]))
     <div class="flex flex-wrap items-center gap-3">
       <button class="inline-flex items-center gap-1 py-1.5" @click="$emit('back')">
         <ArrowLeftIcon class="h-5 w-5" />
-        <span class="font-stencil text-sm font-bold uppercase">Reports</span>
+        <span class="font-stencil text-sm font-bold uppercase">{{ game.is_scouting ? 'Reports' : 'Games' }}</span>
       </button>
       <div class="min-w-0">
-        <h2 class="font-stencil text-xl font-bold uppercase leading-tight">{{ game.scouted_team }}</h2>
+        <h2 class="font-stencil text-xl font-bold uppercase leading-tight">{{ game.is_scouting ? game.scouted_team : `vs ${game.opponent}` }}</h2>
         <p class="text-xs text-ink-500">
-          vs {{ game.opponent }} · {{ game.played_on }}<template v-if="game.location"> · {{ game.location }}</template>
+          <template v-if="game.is_scouting">vs {{ game.opponent }} · </template>{{ game.played_on }}<template v-if="game.location"> · {{ game.location }}</template>
         </p>
       </div>
       <span v-if="hasScore" class="rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-sm">
         <span class="font-bold" :class="result === 'W' ? 'text-green-400' : result === 'L' ? 'text-rim' : 'text-ink-400'">{{ result }}</span>
         {{ game.our_score }}–{{ game.opp_score }}
       </span>
-      <div class="ml-auto flex items-center gap-2">
-        <button class="btn-ghost py-1.5 text-sm" :title="`Every report on ${game.scouted_team}`" @click="$emit('team')">
+      <div v-if="!readonly" class="ml-auto flex items-center gap-2">
+        <button v-if="game.is_scouting" class="btn-ghost py-1.5 text-sm" :title="`Every report on ${game.scouted_team}`" @click="$emit('team')">
           <UserGroupIcon class="h-4 w-4" /><span class="hidden sm:inline">Team overview</span>
         </button>
         <button class="btn-ghost py-1.5 text-sm" title="Edit matchup details" @click="$emit('edit-details')">
           <PencilIcon class="h-4 w-4" /><span class="hidden sm:inline">Details</span>
         </button>
-        <button class="btn-ghost py-1.5 text-sm" title="Edit scouting notes" @click="$emit('edit-notes')">
+        <button v-if="game.is_scouting" class="btn-ghost py-1.5 text-sm" title="Edit scouting notes" @click="$emit('edit-notes')">
           <DocumentTextIcon class="h-4 w-4" /><span class="hidden sm:inline">Notes</span>
         </button>
         <button class="btn-primary py-1.5 text-sm" title="Open the stat tracker" @click="$emit('track')">
@@ -78,14 +80,14 @@ const hasNotes = computed(() => NOTES.some((n) => props.game[n.key]))
     </div>
 
     <!-- Notes -->
-    <div v-if="hasNotes" class="grid gap-3 sm:grid-cols-2">
+    <div v-if="game.is_scouting && hasNotes" class="grid gap-3 sm:grid-cols-2">
       <section v-for="n in NOTES" :key="n.key" class="card p-3" :class="game[n.key] ? '' : 'opacity-50'">
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-rim">{{ n.label }}</h3>
         <p class="whitespace-pre-wrap text-sm leading-relaxed">{{ game[n.key] || '—' }}</p>
       </section>
     </div>
     <button
-      v-else
+      v-else-if="game.is_scouting && !readonly"
       class="card border border-dashed border-ink-700 p-4 text-left text-sm text-ink-500 hover:text-chalk"
       @click="$emit('edit-notes')"
     >No notes yet — add key players, offensive and defensive schemes…</button>

@@ -3,11 +3,23 @@ import AppNav from '@/components/AppNav.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useAccess } from '@/composables/useAccess'
 import { useSupabaseHealth, healthMessage } from '@/composables/useSupabaseHealth'
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-const { isAuthenticated } = useAuth()
+const { isAuthenticated, user } = useAuth()
+const { ensureAccess, resetAccess } = useAccess()
+
+// Load the signed-in user's role and teams; forget them on sign-out.
+watch(
+  () => user.value?.id,
+  (id) => {
+    if (id) ensureAccess()
+    else resetAccess()
+  },
+  { immediate: true },
+)
 const isDev = computed(() => import.meta.env.DEV)
 const route = useRoute()
 const router = useRouter()

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAccess } from '@/composables/useAccess'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { PracticePlan } from '@/types'
@@ -10,6 +11,8 @@ import PracticePlanViewer from '@/components/PracticePlanViewer.vue'
 import { DocumentDuplicateIcon, PencilIcon, EyeIcon, PlusIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
+// Players can view and print plans; coaches and admins build them.
+const { canEdit } = useAccess()
 const { plans, loading, error, fetchPlans, deletePlan } = usePracticePlan()
 const { confirm } = useConfirm()
 
@@ -107,7 +110,7 @@ function exportPlan(plan: PracticePlan) {
       <div>
         <h1 class="font-stencil text-2xl font-extrabold tracking-tight">Practice Plans</h1>
       </div>
-      <button class="btn-primary capitalize" title="New plan" aria-label="New plan" @click="openNewPlan">
+      <button v-if="canEdit" class="btn-primary capitalize" title="New plan" aria-label="New plan" @click="openNewPlan">
         <PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New plan</span>
       </button>
     </header>
@@ -123,7 +126,7 @@ function exportPlan(plan: PracticePlan) {
 
     <div v-if="!loading && !plans.length" class="card p-10 text-center">
       <p class="mb-3 text-ink-500">No practice plans yet.</p>
-      <button class="btn-primary" @click="openNewPlan">Build your first plan</button>
+      <button v-if="canEdit" class="btn-primary" @click="openNewPlan">Build your first plan</button>
     </div>
 
     <p v-else-if="!loading && !filteredPlans.length" class="text-sm text-ink-500">
@@ -171,16 +174,16 @@ function exportPlan(plan: PracticePlan) {
           <button class="btn-ghost py-1.5 text-xs" title="View plan" @click="viewingPlanId = plan.id">
             <EyeIcon class="h-4 w-4" />
           </button>
-          <button class="btn-ghost py-1.5 text-xs" title="Edit plan" @click="openEditPlan(plan)">
+          <button v-if="canEdit" class="btn-ghost py-1.5 text-xs" title="Edit plan" @click="openEditPlan(plan)">
             <PencilIcon class="h-4 w-4" />
           </button>
-          <button class="btn-ghost py-1.5 text-xs" title="Duplicate plan" aria-label="Duplicate plan" @click="openDuplicatePlan(plan)">
+          <button v-if="canEdit" class="btn-ghost py-1.5 text-xs" title="Duplicate plan" aria-label="Duplicate plan" @click="openDuplicatePlan(plan)">
             <DocumentDuplicateIcon class="h-4 w-4" />
           </button>
           <button class="btn-ghost py-1.5 text-xs" title="Export for printing" @click="exportPlan(plan)">
             <PrinterIcon class="h-4 w-4" />
           </button>
-          <button class="btn-danger py-1.5 text-xs" title="Delete plan" @click="onDeletePlan(plan)">
+          <button v-if="canEdit" class="btn-danger py-1.5 text-xs" title="Delete plan" @click="onDeletePlan(plan)">
             <TrashIcon class="h-4 w-4" />
           </button>
         </div>

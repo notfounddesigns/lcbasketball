@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { isSupabaseConfigured } from '@/lib/supabase'
+import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,11 +12,29 @@ const email = ref('')
 const password = ref('')
 
 const busy = ref(false)
-const error = ref<string | null>(null)
+// An expired or already-used invite / reset link comes back with an error.
+const error = ref<string | null>(typeof route.query.auth_error === 'string' ? route.query.auth_error : null)
+const notice = ref<string | null>(null)
+
+// Email a reset link; it lands on the set-password screen (see main.ts).
+async function forgotPassword() {
+  if (!email.value.trim()) {
+    error.value = 'Enter your email address, then tap "Forgot password?" again.'
+    return
+  }
+  busy.value = true
+  const { error: err } = await supabase.auth.resetPasswordForEmail(email.value.trim(), {
+    redirectTo: location.origin + location.pathname,
+  })
+  busy.value = false
+  if (err) error.value = err.message
+  else notice.value = `If ${email.value.trim()} has an account, a reset link is on its way.`
+}
 
 // Clear a stale failure as soon as the user starts fixing it.
 watch([email, password], () => {
   error.value = null
+  notice.value = null
 })
 
 function validate(): string | null {
@@ -51,7 +69,7 @@ async function submit() {
   if (!(await checkStaff())) {
     await signOut()
     busy.value = false
-    error.value = "This account isn't on the coaching staff list. Ask the head coach to add you."
+    error.value = "This account hasn't been set up yet. Ask an admin to invite you."
     return
   }
 
@@ -115,6 +133,7 @@ async function submit() {
         </div>
 
         <p v-if="error" class="mb-4 text-sm text-red-400" role="alert">{{ error }}</p>
+        <p v-else-if="notice" class="mb-4 text-sm text-green-400" role="status">{{ notice }}</p>
 
         <button class="btn-primary w-full" type="submit" :disabled="busy">
           {{ busy ? 'Signing in…' : 'Sign in' }}
@@ -122,7 +141,8 @@ async function submit() {
       </form>
 
       <p class="mt-5 text-center text-sm text-ink-500">
-        Need an account? Ask the head coach to add you.
+        <button class="underline hover:text-chalk" type="button" :disabled="busy" @click="forgotPassword">Forgot password?</button>
+        · Need an account? Ask an admin or your coach to invite you.
       </p>
     </div>
   </div>
