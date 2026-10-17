@@ -11,12 +11,11 @@ import ShotChart from '@/components/ShotChart.vue'
 import PlaysView from '@/views/PlaysView.vue'
 import StatFlash from '@/components/StatFlash.vue'
 import TrashIcon from '@heroicons/vue/24/outline/TrashIcon'
-import { ArchiveBoxIcon, ArrowLeftIcon, ArrowsRightLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { ArchiveBoxIcon, ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnUpIcon, ArrowUturnLeftIcon, CheckIcon, FolderArrowDownIcon, PencilIcon, PlusIcon, UserGroupIcon, UserPlusIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const {
-  players, games, events, allEvents, subEvents, error,
+  players, games, events, allEvents, error,
   fetchPlayers, fetchGames, fetchEvents, fetchAllEvents,
-  fetchSubEvents, recordSub, deleteSub,
   addPlayer, updatePlayer,
   createGame, updateGame, deleteGame,
   recordStat, undoLastFor,
@@ -224,8 +223,7 @@ async function openGame(g: Game) {
   maxPeriod.value = 5
   selectedPlayerId.value = null
   editingScore.value = false
-  subPickerOpen.value = false
-  await Promise.all([fetchEvents(g.id), fetchSubEvents(g.id)])
+  await fetchEvents(g.id)
   if (activeGame.value?.id !== g.id) return // switched again while loading
   // Resume where the game left off: the saved quarter, else the latest one
   // that has stats.
@@ -321,13 +319,10 @@ async function onUndo(playerId: string) {
 
 const boxScore = computed(() => buildBoxScore(rosterFor(events.value), events.value))
 
-// The box score can show the whole game or one quarter; `period` is stored on
-// every stat event. The roster stays the whole game's so rows don't jump.
+// One period filter (above the court) drives both the shot chart and the box
+// score; `period` is stored on every stat event. The roster stays the whole
+// game's so rows don't jump.
 const boxPeriod = ref<number | 'all'>('all')
-const boxPeriods = computed(() => {
-  const latest = Math.max(4, ...events.value.map((e) => e.period ?? 1))
-  return Array.from({ length: latest }, (_, i) => i + 1)
-})
 const shownBoxScore = computed(() => {
   if (boxPeriod.value === 'all') return boxScore.value
   const inPeriod = events.value.filter((e) => (e.period ?? 1) === boxPeriod.value)
@@ -477,43 +472,8 @@ async function saveScore() {
   toast(ours == null && theirs == null ? 'Final score cleared' : 'Final score saved')
 }
 
-// ----- on-floor lineup (derived from the sub log) -----
-// There's no stored starting five, so infer it: walking the subs in order,
-// a player's last sub decides whether they're on or off. A player who never
-// appears in a sub but has stats this game must have played without being
-// subbed, so count them as on the floor.
-const onCourtIds = computed(() => {
-  const state = new Map<string, boolean>()
-  for (const sub of subEvents.value) {
-    state.set(sub.player_id_in, true)
-    state.set(sub.player_id_out, false)
-  }
-  for (const e of events.value) {
-    if (!state.has(e.player_id)) state.set(e.player_id, true)
-  }
-  return new Set([...state].filter(([, on]) => on).map(([id]) => id))
-})
-
-const onCourtPlayers = computed(() => players.value.filter((p) => onCourtIds.value.has(p.id)))
-
-// ----- substitution UI -----
-const subPickerOpen = ref(false)
-
-async function doSub(playerIdOut: string) {
-  if (!activeGame.value || !selectedPlayerId.value) return
-  await recordSub(activeGame.value.id, selectedPlayerId.value, playerIdOut, activePeriod.value)
-  subPickerOpen.value = false
-}
-
-// A sub brings a bench player on for someone on the floor — so the selected
-// player must be on the bench, and only on-floor players can go out.
-const selectedOnCourt = computed(() => !!selectedPlayerId.value && onCourtIds.value.has(selectedPlayerId.value))
-
-async function undoLastSub() {
-  const last = subEvents.value[subEvents.value.length - 1]
-  if (!last) return
-  if (await deleteSub(last.id)) toast('Substitution undone')
-}
+// Players with a stat this game get a dot in the box score.
+const playedIds = computed(() => new Set(events.value.map((e) => e.player_id)))
 
 function playerName(id: string) {
   return players.value.find((p) => p.id === id)?.name ?? 'Unknown'
@@ -540,31 +500,87 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
 
 <template>
   <section class="flex flex-col gap-4">
-    <!-- Sticky page header -->
+    <!-- Sticky page header: page title + tabs, or the open game's controls -->
     <div
-      class="sticky top-0 z-10 -mx-4 flex items-center gap-3 bg-ink-900/95 px-4 pt-6 pb-1 backdrop-blur-xl">
+      class="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-2 bg-ink-900/95 px-4 pt-6 pb-2 backdrop-blur-xl">
       <h1 v-if="!inGame" class="font-stencil text-xl font-bold capitalize leading-tight">Stats</h1>
-      <button
-        v-if="inGame"
-        class="inline-flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-xs" @click="activeGame = null">
-        <ArrowLeftIcon class="h-5 w-5 text-chalk" />
-        <span class="text-chalk text-[clamp(0.875rem,2vw,1.15rem)] font-stencil uppercase font-bold">Games</span>
-      </button>
-      <span class="grow"></span>
-      <button
-        v-if="inGame && selectedPlayer && selectedHasEvents"
-        class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-away py-1 text-xs hover:bg-away/90"
-        title="Undo last stat"
-        @click="onUndo(selectedPlayerId!)">
-        <ArrowUturnLeftIcon class="h-5 w-5" />Undo
-      </button>
-      <button
-        v-if="inGame"
-        class="inline-flex items-center justify-center gap-1 rounded-md px-3 bg-ink-500 py-1 text-xs hover:bg-ink-500/90"
-        title="Export CSV"
-        @click="exportCsv">
-        <FolderArrowDownIcon class="h-5 w-5" />Export
-      </button>
+      <template v-if="inGame && activeGame">
+        <button class="inline-flex items-center gap-1 py-1.5" @click="activeGame = null">
+          <ArrowLeftIcon class="h-5 w-5 text-chalk" />
+          <span class="font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase text-chalk">Games</span>
+        </button>
+        <button
+          class="group text-left font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase leading-tight"
+          title="Edit game details"
+          @click="openEditGameSheet"
+        >
+          vs {{ activeGame.opponent }}<PencilIcon class="ml-1 inline h-3.5 w-3.5 align-baseline text-ink-500 group-hover:text-chalk" /><br />
+          <span class="font-sans text-xs font-normal normal-case text-ink-500">{{ activeGame.played_on }}<template v-if="activeGame.location"> · {{ activeGame.location }}</template></span>
+        </button>
+        <button
+          v-if="!editingScore"
+          class="inline-flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs hover:text-chalk"
+          :title="hasFinal(activeGame) ? 'Edit final score' : 'Record final score'"
+          @click="startEditScore"
+        >
+          <template v-if="hasFinal(activeGame)">
+            <span
+              class="font-bold"
+              :class="resultLabel(activeGame) === 'W' ? 'text-green-400' : resultLabel(activeGame) === 'L' ? 'text-rim' : 'text-ink-400'"
+            >{{ resultLabel(activeGame) }}</span>
+            {{ activeGame.our_score }}–{{ activeGame.opp_score }}
+          </template>
+          <span v-else class="font-sans text-ink-400">Final score</span>
+        </button>
+        <form v-else class="flex items-center gap-1" @submit.prevent="saveScore">
+          <input
+            v-model.number="ourScoreInput"
+            type="number" min="0" inputmode="numeric" aria-label="Our score"
+            class="input w-14 py-1 text-center text-xs"
+          />
+          <span class="text-ink-500">–</span>
+          <input
+            v-model.number="oppScoreInput"
+            type="number" min="0" inputmode="numeric" :aria-label="`${activeGame.opponent} score`"
+            :placeholder="activeGame.opponent.slice(0, 3).toUpperCase()"
+            class="input w-14 py-1 text-center text-xs"
+          />
+          <button type="submit" class="text-home" title="Save score"><CheckIcon class="h-5 w-5" /></button>
+          <button type="button" class="text-ink-500" title="Cancel" @click="editingScore = false"><XMarkIcon class="h-5 w-5" /></button>
+        </form>
+
+        <!-- Period selector, team fouls, undo, export -->
+        <div class="ml-auto flex items-center gap-1">
+          <span
+            class="mr-1 rounded px-2 py-1 text-[11px] font-semibold"
+            :class="teamFouls >= BONUS_AT ? 'bg-rim/20 text-rim' : 'text-ink-500'"
+            :title="`Team fouls this ${activePeriod > 4 ? 'overtime (4th quarter counts carry over)' : 'quarter'}`"
+          >Fouls {{ teamFouls }}<template v-if="teamFouls >= BONUS_AT"> · BONUS</template></span>
+          <button
+            v-for="p in PERIODS"
+            :key="p.value"
+            class="rounded px-2.5 py-1 text-xs font-bold transition"
+            :class="activePeriod === p.value ? 'bg-rim text-white' : 'bg-ink-700 text-ink-500 hover:text-chalk'"
+            @click="activePeriod = p.value"
+          >{{ p.label }}</button>
+          <button
+            class="rounded px-2 py-1 text-xs font-bold text-ink-500 hover:text-chalk"
+            title="Add another overtime" aria-label="Add another overtime"
+            @click="addOvertime"
+          >+OT</button>
+          <button
+            v-if="selectedPlayer && selectedHasEvents"
+            class="ml-1 hidden rounded-lg bg-away p-1.5 text-white hover:bg-away/90 md:inline-flex"
+            title="Undo last stat" aria-label="Undo last stat"
+            @click="onUndo(selectedPlayerId!)"
+          ><ArrowUturnLeftIcon class="h-5 w-5" /></button>
+          <button
+            class="ml-1 hidden rounded-lg border border-ink-700 bg-ink-800 p-1.5 text-ink-400 hover:text-chalk md:inline-flex"
+            title="Export box score (CSV)" aria-label="Export box score"
+            @click="exportCsv"
+          ><ArrowDownTrayIcon class="h-5 w-5" /></button>
+        </div>
+      </template>
       <!-- Mode tabs -->
       <div v-if="!inGame" class="flex gap-1 ml-auto rounded-lg bg-ink-800 p-0.5">
         <button
@@ -602,7 +618,6 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         ><PlusIcon class="h-5 w-5" /><span class="hidden sm:inline">New Game</span></button>
       </template>
     </div>
-    
     <hr class="h-[2px] bg-ink-700/60 border-0 rounded-lg" />
 
     <p v-if="error" class="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
@@ -640,196 +655,52 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
         </div>
       </template>
 
-      <!-- Active game -->
+      <!-- Active game: stat column | shot chart over box score -->
       <template v-else>
-        <!-- Game header bar: back | name | period selector -->
-        <div class="flex flex-wrap gap-2">
-          <button
-            class="inline-flex items-center justify-center gap-1 rounded-lg border text-gray-300 border-ink-700 bg-ink-800 px-[0.5rem] py-1 text-xs hover:text-chalk"
-            @click="showRosterDrawer = true">
-            <UserGroupIcon class="h-5 w-5" />Roster
-          </button>
-          <button
-            class="group text-left text-[clamp(0.875rem,2vw,1.75rem)] font-stencil uppercase leading-4 font-bold"
-            title="Edit game details"
-            @click="openEditGameSheet"
-          >
-            vs {{ activeGame.opponent }}<PencilIcon class="ml-1 inline h-3.5 w-3.5 align-baseline text-ink-500 group-hover:text-chalk" /><br />
-            <span class="text-sm normal-case text-ink-500">{{ activeGame.played_on }}<template v-if="activeGame.location"> · {{ activeGame.location }}</template></span>
-          </button>
-          <button
-            v-if="!editingScore"
-            class="inline-flex items-center gap-1 self-center rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs hover:text-chalk"
-            :title="hasFinal(activeGame) ? 'Edit final score' : 'Record final score'"
-            @click="startEditScore"
-          >
-            <template v-if="hasFinal(activeGame)">
-              <span
-                class="font-bold"
-                :class="resultLabel(activeGame) === 'W' ? 'text-green-400' : resultLabel(activeGame) === 'L' ? 'text-rim' : 'text-ink-400'"
-              >{{ resultLabel(activeGame) }}</span>
-              {{ activeGame.our_score }}–{{ activeGame.opp_score }}
-            </template>
-            <span v-else class="font-sans text-ink-400">Final score</span>
-          </button>
-          <form
-            v-else
-            class="flex items-center gap-1 self-center"
-            @submit.prevent="saveScore"
-          >
-            <input
-              v-model.number="ourScoreInput"
-              type="number" min="0" inputmode="numeric" aria-label="Our score"
-              class="input w-14 py-1 text-center text-xs"
-            />
-            <span class="text-ink-500">–</span>
-            <input
-              v-model.number="oppScoreInput"
-              type="number" min="0" inputmode="numeric" :aria-label="`${activeGame.opponent} score`"
-              :placeholder="activeGame.opponent.slice(0, 3).toUpperCase()"
-              class="input w-14 py-1 text-center text-xs"
-            />
-            <button type="submit" class="text-home" title="Save score"><CheckIcon class="h-5 w-5" /></button>
-            <button type="button" class="text-ink-500" title="Cancel" @click="editingScore = false"><XMarkIcon class="h-5 w-5" /></button>
-          </form>
-          <div class="ml-auto flex items-center gap-1">
-            <span
-              class="mr-1 rounded px-2 py-1 text-[11px] font-semibold"
-              :class="teamFouls >= BONUS_AT ? 'bg-rim/20 text-rim' : 'text-ink-500'"
-              :title="`Team fouls this ${activePeriod > 4 ? 'overtime (4th quarter counts carry over)' : 'quarter'}`"
-            >Fouls {{ teamFouls }}<template v-if="teamFouls >= BONUS_AT"> · BONUS</template></span>
-            <button
-              v-for="p in PERIODS"
-              :key="p.value"
-              class="rounded px-2.5 py-1 text-xs font-bold transition"
-              :class="activePeriod === p.value
-                ? 'bg-rim text-white'
-                : 'bg-ink-700 text-ink-500 hover:text-chalk'"
-              @click="activePeriod = p.value"
-            >{{ p.label }}</button>
-            <button
-              class="rounded px-2 py-1 text-xs font-bold text-ink-500 hover:text-chalk"
-              title="Add another overtime" aria-label="Add another overtime"
-              @click="addOvertime"
-            >+OT</button>
-          </div>
-        </div>
-
-        <!-- Sub picker (shown above main content when open) -->
-        <div v-if="subPickerOpen && selectedPlayer" class="rounded-xl border border-yellow-500/30 bg-ink-800 p-3">
-          <p v-if="selectedOnCourt" class="mb-2 text-xs text-ink-500">
-            <span class="font-semibold text-yellow-400">{{ selectedPlayer.name }}</span> is already on the floor —
-            select the bench player coming in, then tap sub.
-          </p>
-          <p v-else-if="!onCourtPlayers.length" class="mb-2 text-xs text-ink-500">
-            Nobody is on the floor yet — record a stat for the starters first.
-          </p>
-          <p v-else class="mb-2 text-xs text-ink-500">
-            <span class="font-semibold text-yellow-400">{{ selectedPlayer.name }}</span> comes IN for:
-          </p>
-          <div class="flex flex-wrap gap-1.5">
-            <template v-if="!selectedOnCourt">
-              <button
-                v-for="other in onCourtPlayers"
-                :key="other.id"
-                class="rounded-lg bg-ink-600 px-3 py-1.5 text-xs text-chalk ring-1 ring-green-500/60 hover:bg-rim hover:text-white"
-                @click="doSub(other.id)"
-              >#{{ other.number ?? '—' }} {{ other.name }}</button>
-            </template>
-            <button class="text-ink-500 hover:text-chalk" title="Cancel" aria-label="Cancel" @click="subPickerOpen = false"><XMarkIcon class="h-5 w-5" /></button>
-          </div>
-        </div>
-
-        <!-- On-floor lineup, inferred from substitutions -->
-        <div v-if="onCourtPlayers.length" class="flex flex-wrap items-center gap-1.5 text-xs">
-          <span class="text-ink-500">On floor</span>
-          <button
-            v-for="p in onCourtPlayers"
-            :key="p.id"
-            class="rounded-full border px-2 py-0.5 transition"
-            :class="selectedPlayerId === p.id
-              ? 'border-green-400 bg-green-500/20 text-chalk'
-              : 'border-green-500/40 text-green-300 hover:bg-green-500/10'"
-            @click="selectedPlayerId = selectedPlayerId === p.id ? null : p.id"
-          >#{{ p.number ?? '—' }} {{ p.name.split(' ')[0] }}</button>
-          <span v-if="onCourtPlayers.length !== 5" class="text-[11px] text-yellow-400/80">
-            ({{ onCourtPlayers.length }} — log subs to correct)
-          </span>
-        </div>
-
-        <!-- Main content: slim stat pane + shot chart + box score -->
         <div class="flex gap-3">
 
-          <!-- Slim stat pane (tablet/desktop; phones get the bottom stat pad) -->
-          <div class="hidden w-24 shrink-0 flex-col gap-2 md:flex">
-            <!-- Player badge -->
-            <div class="rounded-xl bg-ink-800 p-2 text-center">
-              <template v-if="selectedPlayer">
-                <div class="font-mono text-2xl font-black leading-none text-rim">
-                  #{{ selectedPlayer.number ?? '—' }}
-                </div>
-                <div class="mt-0.5 truncate text-[11px] leading-tight text-ink-400">
-                  {{ selectedPlayer.name.split(' ')[0] }}
-                </div>
-                <div class="mt-1.5 flex justify-center">
-                  <button
-                    class="rounded p-1 transition"
-                    :class="subPickerOpen ? 'text-yellow-400' : 'text-ink-500 hover:text-chalk'"
-                    title="Substitute" aria-label="Substitute"
-                    @click="subPickerOpen = !subPickerOpen"
-                  ><ArrowsRightLeftIcon class="h-5 w-5" /></button>
-                </div>
-              </template>
-              <div v-else class="py-2 text-[11px] italic leading-tight text-ink-500">
-                Pick a player
-              </div>
-            </div>
-
-            <!-- Free throws, side by side so the whole column fits a landscape iPad -->
-            <div class="grid grid-cols-2 gap-1">
-              <button
-                v-for="b in FT_STATS"
-                :key="b.stat"
-                class="flex min-h-[48px] flex-col items-center justify-center rounded-lg text-sm font-bold leading-tight transition"
-                :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
-                :disabled="!selectedPlayerId"
-                :aria-label="b.label"
-                @click="tap(b.stat)"
-              >FT<span class="text-[10px] font-semibold uppercase">{{ b.label.split(' ')[1] }}</span></button>
-            </div>
+          <!-- Stat column (tablet/desktop; phones get the bottom stat pad) -->
+          <div class="stat-column hidden w-32 shrink-0 flex-col gap-2 md:flex">
+            <button
+              class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-ink-700 bg-ink-800 py-2 text-sm text-gray-300 hover:text-chalk"
+              @click="showRosterDrawer = true">
+              <UserGroupIcon class="h-5 w-5" />Roster
+            </button>
+            <p class="truncate text-center text-xs" :class="selectedPlayer ? 'font-semibold text-rim' : 'italic text-ink-500'">
+              {{ selectedPlayer ? `#${selectedPlayer.number ?? '—'} ${selectedPlayer.name}` : 'Pick a player' }}
+            </p>
+            <button
+              v-for="b in FT_STATS"
+              :key="b.stat"
+              class="stat-btn rounded-lg text-sm font-bold transition"
+              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
+              :disabled="!selectedPlayerId"
+              @click="tap(b.stat)"
+            >{{ b.label }}</button>
             <div class="my-0.5 border-t border-ink-700" />
-
-            <!-- Non-shooting action buttons -->
             <button
               v-for="b in ACTION_STATS"
               :key="b.stat"
-              class="min-h-[44px] rounded-lg text-sm font-bold transition"
+              class="stat-btn rounded-lg text-sm font-bold transition"
               :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
               :disabled="!selectedPlayerId"
               @click="tap(b.stat)"
             >{{ b.label }}</button>
           </div>
 
-          <!-- Shot chart + box score -->
-          <div class="min-w-0 flex-1 py-2 flex flex-col lg:flex-row px-2 lg:px-0 gap-4 overflow-y-auto overflow-x-hidden lg:overflow-y-hidden boxscore-shotchart-container">
-            
-            <!-- Box score + sub log share one column (beside the court on wide screens) -->
-            <div class="boxscore flex min-w-0 flex-col gap-3 lg:w-1/2">
-            <!-- Box score (clickable rows to select player) -->
-            <div class="card min-h-0 shrink p-2 w-full min-w-[600px] max-w-[95dvw] overflow-auto lg:overflow-x-hidden lg:overflow-y-auto lg:min-w-[0px] lg:max-w-full">
-              <div class="mb-3 flex flex-wrap items-center gap-2">
-                <h2 class="font-stencil font-bold">Box Score</h2>
-                <div class="ml-auto flex gap-0.5 rounded-lg bg-ink-900/60 p-0.5" role="group" aria-label="Box score period">
-                  <button
-                    v-for="p in ['all', ...boxPeriods] as const"
-                    :key="p"
-                    class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition"
-                    :class="boxPeriod === p ? 'bg-ink-600 text-chalk' : 'text-ink-500 hover:text-chalk'"
-                    :aria-pressed="boxPeriod === p"
-                    @click="boxPeriod = p"
-                  >{{ p === 'all' ? 'Game' : periodLabel(p) }}</button>
-                </div>
-              </div>
+          <!-- Shot chart, then box score (side by side on wide screens) -->
+          <div class="boxscore-shotchart-container flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden lg:flex-row lg:overflow-y-hidden">
+            <ShotChart
+              v-model:filter="boxPeriod"
+              :game-id="activeGame.id"
+              :player-id="selectedPlayerId"
+              :period="activePeriod"/>
+
+            <!-- Box score (tap a row to select the player) -->
+            <div class="boxscore card min-w-0 overflow-auto p-3 lg:w-1/2">
+              <h2 class="mb-2 font-stencil font-bold">
+                Box Score<span v-if="boxPeriod !== 'all'" class="ml-2 font-sans text-xs font-normal text-ink-500">{{ periodLabel(boxPeriod) }} only</span>
+              </h2>
               <table class="w-full text-right font-mono text-sm">
                 <thead class="text-ink-500">
                   <tr class="border-b border-ink-700">
@@ -851,8 +722,8 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
                     <td class="py-2 text-left">
                       <span
                         class="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                        :class="onCourtIds.has(r.player_id) ? 'bg-green-400' : 'bg-transparent'"
-                        :title="onCourtIds.has(r.player_id) ? 'On the floor' : undefined"
+                        :class="playedIds.has(r.player_id) ? 'bg-green-400' : 'bg-transparent'"
+                        :title="playedIds.has(r.player_id) ? 'Has stats this game' : undefined"
                       />
                       <span class="font-mono text-xs text-ink-500">#{{ r.number ?? '—' }}</span>
                       <span class="ml-1">{{ r.name }}</span>
@@ -890,35 +761,8 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
                 </tfoot>
               </table>
             </div>
-
-            <!-- Sub log -->
-            <div v-if="subEvents.length > 0" class="shrink-0 rounded-xl bg-ink-800 p-3">
-              <div class="mb-1 flex items-center">
-                <p class="text-xs font-semibold text-ink-500">Substitutions</p>
-                <button
-                  class="ml-auto inline-flex items-center gap-1 text-xs text-ink-500 hover:text-chalk"
-                  title="Undo last substitution"
-                  @click="undoLastSub"
-                ><ArrowUturnLeftIcon class="h-4 w-4" />Undo</button>
-              </div>
-              <ul class="space-y-0.5 text-xs text-ink-500">
-                <li v-for="sub in subEvents" :key="sub.id">
-                  {{ periodLabel(sub.period) }}: {{ playerName(sub.player_id_in) }}
-                  IN for {{ playerName(sub.player_id_out) }}
-                </li>
-              </ul>
-            </div>
-            </div>
-
-            <ShotChart
-              :game-id="activeGame.id"
-              :player-id="selectedPlayerId"
-              :period="activePeriod"/>
           </div>
         </div>
-
-        <!-- Room so the fixed stat pad never covers the last of the content -->
-        <div class="h-56 md:hidden" aria-hidden="true" />
 
         <!-- Phone stat pad: big thumb-reachable buttons pinned above the tab bar -->
         <div
@@ -930,14 +774,17 @@ const seasonGames = computed(() => new Set(allEvents.value.map((e) => e.game_id)
               <span class="font-mono text-xl font-black leading-none text-rim">#{{ selectedPlayer.number ?? '—' }}</span>
               <span class="truncate text-sm font-semibold">{{ selectedPlayer.name }}</span>
             </template>
-            <span v-else class="text-sm italic text-ink-500">Tap a player in the box score or on-floor list</span>
+            <span v-else class="text-sm italic text-ink-500">Tap a player in the box score</span>
             <button
-              v-if="selectedPlayer"
-              class="ml-auto rounded-lg p-2 transition"
-              :class="subPickerOpen ? 'bg-yellow-500/20 text-yellow-400' : 'bg-ink-800 text-ink-400'"
-              title="Substitute" aria-label="Substitute"
-              @click="subPickerOpen = !subPickerOpen"
-            ><ArrowsRightLeftIcon class="h-5 w-5" /></button>
+              class="ml-auto rounded-lg bg-ink-800 p-2 text-ink-400"
+              title="Roster" aria-label="Roster"
+              @click="showRosterDrawer = true"
+            ><UserGroupIcon class="h-5 w-5" /></button>
+            <button
+              class="rounded-lg bg-ink-800 p-2 text-ink-400"
+              title="Export box score (CSV)" aria-label="Export box score"
+              @click="exportCsv"
+            ><ArrowDownTrayIcon class="h-5 w-5" /></button>
             <button
               v-if="selectedPlayer"
               class="rounded-lg bg-ink-800 p-2 text-ink-400 disabled:opacity-30"
