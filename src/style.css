@@ -19,12 +19,12 @@ body,
   --nav-clear: calc(2.5rem + env(safe-area-inset-bottom, 0px));
 }
 
-/* Scroll and pan, never zoom: 'pan-x pan-y' is 'auto' minus pinch- and
-   double-tap-zoom. Ancestors intersect with descendants, so the court's
-   stricter touch-action: none still wins where it applies. */
+/* Scroll, pan and pinch-zoom (WCAG 1.4.4), but no double-tap zoom, so quick
+   repeat taps on the stat pad register as taps. Ancestors intersect with
+   descendants, so the court's stricter touch-action: none still wins there. */
 html,
 body {
-  touch-action: pan-x pan-y;
+  touch-action: manipulation;
 }
 
 body {

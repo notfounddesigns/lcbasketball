@@ -10,7 +10,7 @@ import { PLAY_CATEGORIES, resolveCategory } from '@/lib/play-categories'
 import CourtCanvas from '@/components/CourtCanvas.vue'
 import PlayAnimator from '@/components/PlayAnimator.vue'
 import VideoUploader from '@/components/VideoUploader.vue'
-import { BackspaceIcon, Bars3BottomLeftIcon, PlusIcon, PrinterIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
+import { BackspaceIcon, Bars3BottomLeftIcon, ChevronLeftIcon, ChevronRightIcon, DocumentDuplicateIcon, PlusIcon, PrinterIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
 const router = useRouter()
@@ -150,11 +150,45 @@ function addPhase() {
   activePhase.value = form.diagram.phases.length // jump to the new phase
 }
 
+// Phase 1 lives on `elements` and the rest on `phases`; reordering is simplest
+// on the flat list, written back in the same shape.
+function allPhases(): DiagramElement[][] {
+  return [form.diagram.elements, ...(form.diagram.phases ?? [])]
+}
+
+function setAllPhases(list: DiagramElement[][]) {
+  const [first, ...rest] = list
+  form.diagram.elements = first
+  form.diagram.phases = rest
+}
+
+// Insert an exact copy right after the current phase. Ids are kept so markers
+// still line up phase to phase in the animator.
+function duplicateCurrentPhase() {
+  const list = allPhases()
+  const copy = JSON.parse(JSON.stringify(list[activePhase.value])) as DiagramElement[]
+  list.splice(activePhase.value + 1, 0, copy)
+  setAllPhases(list)
+  activePhase.value += 1
+}
+
+function moveCurrentPhase(delta: -1 | 1) {
+  const from = activePhase.value
+  const to = from + delta
+  const list = allPhases()
+  if (to < 0 || to >= list.length) return
+  ;[list[from], list[to]] = [list[to], list[from]]
+  setAllPhases(list)
+  activePhase.value = to
+}
+
 function deleteCurrentPhase() {
-  if (activePhase.value === 0 || !form.diagram.phases) return
-  form.diagram.phases.splice(activePhase.value - 1, 1)
+  const list = allPhases()
+  if (list.length < 2) return
+  list.splice(activePhase.value, 1)
+  setAllPhases(list)
   // Step back onto the previous phase; clamp in case the deleted one was last.
-  activePhase.value = Math.min(activePhase.value - 1, totalPhases.value - 1)
+  activePhase.value = Math.max(0, Math.min(activePhase.value - 1, totalPhases.value - 1))
 }
 
 // Never let the active tab point past the end (e.g. after deleting the last
@@ -299,7 +333,7 @@ async function save() {
 
     <!-- Court fills the width; play details are in the drawer -->
     <div class="min-w-0 pt-3">
-        <div class="mb-1.5 flex items-center gap-1">
+        <div class="mb-1.5 flex items-center gap-1 overflow-x-auto">
           <!-- <span class="label mb-0">Diagram</span> -->
           <button
             v-for="i in totalPhases"
@@ -322,8 +356,36 @@ async function save() {
             <PlusIcon class="h-5 w-5" />
           </button>
           <button
+            class="shrink-0 rounded p-1 -ml-1 text-xs text-ink-500 hover:text-white"
+            title="Duplicate current phase"
+            aria-label="Duplicate current phase"
+            @click="duplicateCurrentPhase"
+          >
+            <DocumentDuplicateIcon class="h-5 w-5" />
+          </button>
+          <template v-if="totalPhases > 1">
+            <button
+              class="shrink-0 rounded p-1 -ml-1 text-xs text-ink-500 hover:text-white disabled:opacity-30"
+              title="Move phase earlier"
+              aria-label="Move phase earlier"
+              :disabled="activePhase === 0"
+              @click="moveCurrentPhase(-1)"
+            >
+              <ChevronLeftIcon class="h-5 w-5" />
+            </button>
+            <button
+              class="shrink-0 rounded p-1 -ml-1 text-xs text-ink-500 hover:text-white disabled:opacity-30"
+              title="Move phase later"
+              aria-label="Move phase later"
+              :disabled="activePhase === totalPhases - 1"
+              @click="moveCurrentPhase(1)"
+            >
+              <ChevronRightIcon class="h-5 w-5" />
+            </button>
+          </template>
+          <button
             v-if="totalPhases > 1"
-            class="shrink-0 rounded p-1 -ml-2 text-xs text-red-500 hover:text-red-300"
+            class="shrink-0 rounded p-1 -ml-1 text-xs text-red-500 hover:text-red-300"
             title="Delete current phase"
             @click="deleteCurrentPhase"
           >

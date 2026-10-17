@@ -7,7 +7,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { formatDuration, formatPlanDate, formatTimeWindow, blockRanges, blockTitle, totalMinutes } from '@/lib/practice-utils'
 import PracticePlanModal from '@/components/PracticePlanModal.vue'
 import PracticePlanViewer from '@/components/PracticePlanViewer.vue'
-import { PencilIcon, EyeIcon, PlusIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { DocumentDuplicateIcon, PencilIcon, EyeIcon, PlusIcon, PrinterIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
 const { plans, loading, error, fetchPlans, deletePlan } = usePracticePlan()
@@ -48,6 +48,7 @@ const planCards = computed(() =>
 // null = closed, undefined-plan = "create new", plan = "edit that plan"
 const planModalOpen = ref(false)
 const editingPlan = ref<PracticePlan | null>(null)
+const sourcePlan = ref<PracticePlan | null>(null)
 const viewingPlanId = ref<string | null>(null)
 
 // Track by id so the viewer picks up edits made while it's open.
@@ -55,17 +56,31 @@ const viewingPlan = computed(() => plans.value.find((p) => p.id === viewingPlanI
 
 function openNewPlan() {
   editingPlan.value = null
+  sourcePlan.value = null
   planModalOpen.value = true
 }
 
 function openEditPlan(plan: PracticePlan) {
   editingPlan.value = plan
+  sourcePlan.value = null
   planModalOpen.value = true
 }
 
-function onPlanSaved(saved: PracticePlan) {
+// Opens the editor on a copy — nothing is written until the coach saves it.
+function openDuplicatePlan(plan: PracticePlan) {
+  editingPlan.value = null
+  sourcePlan.value = plan
+  planModalOpen.value = true
+}
+
+function closePlanModal() {
   planModalOpen.value = false
   editingPlan.value = null
+  sourcePlan.value = null
+}
+
+function onPlanSaved(saved: PracticePlan) {
+  closePlanModal()
   if (viewingPlanId.value) viewingPlanId.value = saved.id
 }
 
@@ -159,6 +174,9 @@ function exportPlan(plan: PracticePlan) {
           <button class="btn-ghost py-1.5 text-xs" title="Edit plan" @click="openEditPlan(plan)">
             <PencilIcon class="h-4 w-4" />
           </button>
+          <button class="btn-ghost py-1.5 text-xs" title="Duplicate plan" aria-label="Duplicate plan" @click="openDuplicatePlan(plan)">
+            <DocumentDuplicateIcon class="h-4 w-4" />
+          </button>
           <button class="btn-ghost py-1.5 text-xs" title="Export for printing" @click="exportPlan(plan)">
             <PrinterIcon class="h-4 w-4" />
           </button>
@@ -174,12 +192,14 @@ function exportPlan(plan: PracticePlan) {
       :plan="viewingPlan"
       @close="viewingPlanId = null"
       @edit="openEditPlan(viewingPlan)"
+      @duplicate="openDuplicatePlan(viewingPlan)"
       @print="exportPlan(viewingPlan)"
     />
     <PracticePlanModal
       v-if="planModalOpen"
       :plan="editingPlan"
-      @close="planModalOpen = false; editingPlan = null"
+      :source="sourcePlan"
+      @close="closePlanModal"
       @saved="onPlanSaved"
     />
   </section>
