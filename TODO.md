@@ -31,8 +31,8 @@
 29. - [x] Per-quarter box score — reuse the shot chart's All/Q1–OT filter on the box score; `period` is already stored on every stat event (completes the splits promised by #15)
 30. - [x] Team totals row in the game box score and season table (team FG%, 3P%, FT%)
 31. - [x] Edit game details — `updateGame` exists but only the final score is editable; add opponent, date, location and notes
-32. - [ ] Starting five at tip-off — let the coach set starters so the on-floor lineup is right from the first possession instead of inferred from stats/subs
-33. - [ ] Opponent scoring by quarter, then plus/minus and minutes played computed from the sub log
+32. - [ ] ~~Starting five at tip-off~~ — dropped: substitution tracking was removed from the stats UI
+33. - [ ] Opponent scoring by quarter (plus/minus and minutes need sub tracking, which was removed from the UI)
 34. - [ ] Player game log — tap a season row to see game-by-game lines and a season shot chart for that player
 35. - [x] Foul alerts — warn at 4 and 5 personal fouls; team fouls per quarter with a bonus indicator
 36. - [x] Multiple overtimes — only one OT (period 5) exists today; add OT2+

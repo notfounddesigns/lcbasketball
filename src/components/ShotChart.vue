@@ -35,16 +35,17 @@ const pendingShot = ref<{ x: number; y: number } | null>(null)
 const selectedShotId = ref<string | null>(null)
 const selectedShot = computed(() => shots.value.find((s) => s.id === selectedShotId.value) ?? null)
 
-// Which period's shots are overlaid on the chart
-// Q1–Q4 and OT always; extra overtimes appear once shots exist in them.
+// Which period's shots are overlaid on the chart. The parent owns it so the box
+// score can follow the same filter.
+// Q1–Q4 and OT always; extra overtimes appear once stats exist in them.
 const PERIOD_FILTERS = computed<{ label: string; value: number | 'all' }[]>(() => {
-  const last = Math.max(5, props.period, ...shots.value.map((s) => s.period))
+  const last = Math.max(5, props.period, ...shots.value.map((s) => s.period), ...events.value.map((e) => e.period ?? 1))
   return [
     { label: 'All', value: 'all' },
     ...Array.from({ length: last }, (_, i) => ({ label: periodLabel(i + 1), value: i + 1 })),
   ]
 })
-const periodFilter = ref<number | 'all'>('all')
+const periodFilter = defineModel<number | 'all'>('filter', { default: 'all' })
 
 watch(() => props.gameId, (id) => {
   selectedShotId.value = null
@@ -55,8 +56,8 @@ watch(() => props.gameId, (id) => {
 // ---------- court ↔ element geometry ----------
 // The chart's height comes from CSS (a slice of the viewport), so the element
 // box almost never matches the 500×470 viewBox. With preserveAspectRatio
-// "xMidYMid meet" the court is scaled uniformly to fit and centred, leaving a
-// letterbox margin on one axis. Element coordinates are therefore a uniform
+// "xMidYMin meet" the court is scaled uniformly to fit, centred across and
+// pinned to the top, leaving a letterbox margin on one axis. Element coordinates are therefore a uniform
 // scale *plus an offset* — treating them as a straight stretch of the viewBox
 // lands the marker further from the tap the further it is from centre.
 function fitCourt(boxW: number, boxH: number) {
@@ -64,7 +65,7 @@ function fitCourt(boxW: number, boxH: number) {
   return {
     scale,
     offsetX: (boxW - VB_W * scale) / 2,
-    offsetY: (boxH - VB_H * scale) / 2,
+    offsetY: 0, // pinned to the top (xMidYMin)
   }
 }
 
@@ -295,39 +296,36 @@ function shotPath(shot: ShotEvent): string {
 
 <template>
   <div class="flex flex-col gap-2 w-full shotchart-container lg:w-1/2">
-    <!-- Shooting summary + legend -->
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <span
-        v-for="row in summaryRows"
-        :key="row.label"
-        class="inline-flex items-baseline gap-1.5 rounded-lg bg-ink-800 px-2.5 py-1"
-      >
-        <span class="font-semibold text-ink-500">{{ row.label }}</span>
-        <span class="font-mono text-chalk">{{ row.made }}/{{ row.total }}</span>
-        <span class="font-mono font-bold" :class="row.total ? pctTone(row.pct, row.good, row.ok) : 'text-ink-600'">
-          {{ row.total ? `${row.pct}%` : '—' }}
+    <!-- Period filter | shooting summary + legend -->
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+      <div class="flex items-center gap-1" role="group" aria-label="Period filter">
+        <button
+          v-for="f in PERIOD_FILTERS"
+          :key="f.value"
+          class="rounded px-2 py-1 text-[11px] font-semibold transition"
+          :class="periodFilter === f.value ? 'bg-ink-500 text-chalk' : 'bg-ink-800 text-ink-500 hover:text-chalk'"
+          :aria-pressed="periodFilter === f.value"
+          @click="periodFilter = f.value; selectedShotId = null"
+        >{{ f.label }}</button>
+      </div>
+      <div class="ml-auto flex flex-wrap items-center gap-1.5">
+        <span
+          v-for="row in summaryRows"
+          :key="row.label"
+          class="inline-flex items-baseline gap-1.5 rounded-lg bg-ink-800 px-2 py-1"
+        >
+          <span class="font-semibold text-ink-500">{{ row.label }}</span>
+          <span class="font-mono text-chalk">{{ row.made }}/{{ row.total }}</span>
+          <span class="font-mono font-bold" :class="row.total ? pctTone(row.pct, row.good, row.ok) : 'text-ink-600'">
+            {{ row.total ? `${row.pct}%` : '—' }}
+          </span>
         </span>
-      </span>
-      <span class="ml-auto inline-flex items-center gap-3 text-[11px] text-ink-500">
-        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
-        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
-        <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
-      </span>
-    </div>
-
-    <!-- Period filter + hint -->
-    <div class="flex flex-wrap items-center gap-1">
-      <button
-        v-for="f in PERIOD_FILTERS"
-        :key="f.value"
-        class="rounded px-2 py-0.5 text-[11px] font-semibold transition"
-        :class="periodFilter === f.value ? 'bg-ink-500 text-chalk' : 'bg-ink-800 text-ink-500 hover:text-chalk'"
-        @click="periodFilter = f.value; selectedShotId = null"
-      >{{ f.label }}</button>
-      <span class="ml-auto text-[11px] text-ink-500">
-        {{ playerId ? 'Tap the court to add a shot' : 'Select a player to add shots' }}
-        · {{ displayShots.length }} shot{{ displayShots.length !== 1 ? 's' : '' }}
-      </span>
+        <span class="inline-flex items-center gap-2.5 pl-1 text-[11px] text-ink-500" :title="playerId ? 'Tap the court to add a shot' : 'Select a player to add shots'">
+          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#16a34a"/></svg>Make</span>
+          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#ef4444" stroke-width="1.5"/></svg>Miss</span>
+          <span class="inline-flex items-center gap-1"><svg width="10" height="10"><path d="M5 0.5 L9.5 5 L5 9.5 L0.5 5 Z" fill="#9ca3af"/></svg>3PT</span>
+        </span>
+      </div>
     </div>
 
     <!-- Court SVG -->
@@ -337,7 +335,7 @@ function shotPath(shot: ShotEvent): string {
         :viewBox="`0 0 ${VB_W} ${VB_H}`"
         class="w-full rounded-lg bg-ink-900 shotchart"
         :class="playerId ? 'cursor-crosshair' : 'cursor-default'"
-        preserveAspectRatio="xMidYMid meet"
+        preserveAspectRatio="xMidYMin meet"
         @click="onCourtClick"
       >
         <!-- Court boundary -->
