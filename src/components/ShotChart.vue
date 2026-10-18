@@ -329,7 +329,7 @@ function shotPath(shot: ShotEvent): string {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2 w-full shotchart-container lg:w-1/2">
+  <div class="flex flex-col gap-2 w-full shotchart-container">
     <!-- Period filter | shooting summary: always one row (scrolls sideways
          rather than wrapping on a narrow phone) -->
     <div class="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap text-[11px]">
