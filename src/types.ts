@@ -28,6 +28,11 @@ export interface ArrowElement extends BaseElement {
   points: Point[] // first = tail, last = head
   style: 'pass' | 'cut' | 'screen' | 'dribble'
   control?: Point // quadratic bezier control point; absent = straight line
+  // Passes can be tied to the passer and receiver markers: their ends then sit
+  // on those players' circles and follow them when they move. `points` is
+  // kept in sync, so readers that ignore these still draw the line correctly.
+  fromId?: string
+  toId?: string
 }
 
 export interface MarkerElement extends BaseElement {

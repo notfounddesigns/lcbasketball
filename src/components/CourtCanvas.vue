@@ -355,12 +355,12 @@ function onSelectDown(e: PointerEvent) {
     if (sel?.type === 'arrow') {
       if (dist(p, sel.points[0]) < HIT_HANDLE) {
         dragKind.value = 'arrow-tail'
-        dragLive.value = { ...sel, points: [...sel.points] }
+        dragLive.value = { ...sel, points: [...sel.points], fromId: undefined }
         return
       }
       if (dist(p, sel.points[1]) < HIT_HANDLE) {
         dragKind.value = 'arrow-head'
-        dragLive.value = { ...sel, points: [...sel.points] }
+        dragLive.value = { ...sel, points: [...sel.points], toId: undefined }
         return
       }
       if (dist(p, controlOf(sel)) < HIT_HANDLE) {
@@ -396,13 +396,13 @@ function onSelectDown(e: PointerEvent) {
     if (dist(p, el.points[0]) < HIT_HANDLE) {
       selectedId.value = el.id
       dragKind.value = 'arrow-tail'
-      dragLive.value = { ...el, points: [...el.points] }
+      dragLive.value = { ...el, points: [...el.points], fromId: undefined }
       return
     }
     if (dist(p, el.points[1]) < HIT_HANDLE) {
       selectedId.value = el.id
       dragKind.value = 'arrow-head'
-      dragLive.value = { ...el, points: [...el.points] }
+      dragLive.value = { ...el, points: [...el.points], toId: undefined }
       return
     }
     if (distToElement(p, el) < HIT_BODY) {
@@ -466,7 +466,13 @@ function onSelectUp() {
     const original = elements.value.find((el): el is MarkerElement => el.id === live.id && el.type === 'marker')
     if (original) openPlayerMenu(original)
   } else if (dragKind.value && live) {
-    commit(elements.value.map((el) => (el.id === live.id ? live : el)))
+    let next: DiagramElement = live
+    // A pass end dropped on a player ties to that player again.
+    if (live.type === 'arrow' && live.style === 'pass') {
+      if (dragKind.value === 'arrow-tail') next = { ...live, fromId: markerAt(live.points[0], live.toId)?.id }
+      if (dragKind.value === 'arrow-head') next = { ...live, toId: markerAt(live.points[1], live.fromId)?.id }
+    }
+    commit(syncAttached(elements.value.map((el) => (el.id === next.id ? next : el))))
   }
   markerDownAt = null
   dragKind.value = null
@@ -481,6 +487,21 @@ function onDrawDown(e: PointerEvent) {
     const from = routeMarker()
     if (!from) {
       tool.value = 'select'
+      return
+    }
+    // Passing: tapping the receiver draws the pass between the two players.
+    const receiver = arrowStyle.value === 'pass' ? markerAt(p, from.id) : null
+    if (receiver) {
+      finishRoute(resolveArrow({
+        id: crypto.randomUUID(),
+        type: 'arrow',
+        color: color.value,
+        width: strokeWidth.value,
+        points: [from.at, receiver.at],
+        style: 'pass',
+        fromId: from.id,
+        toId: receiver.id,
+      }, elements.value))
       return
     }
     drawing.value = {
@@ -615,6 +636,13 @@ function onDrawMove(e: PointerEvent) {
     // A route keeps its tail on the player's edge, facing the drag.
     const from = tool.value === 'route' ? routeMarker() : null
     drawing.value.points = [from ? routeTail(from.at, p) : drawing.value.points[0], p]
+    // A pass dragged onto a teammate snaps to them, tied at both ends.
+    if (from && drawing.value.style === 'pass') {
+      const receiver = markerAt(p, from.id)
+      drawing.value.fromId = from.id
+      drawing.value.toId = receiver?.id
+      if (receiver) drawing.value.points = resolveArrow(drawing.value, elements.value).points
+    }
   }
 }
 
@@ -629,13 +657,16 @@ function onDrawUp() {
   if (el.type === 'pen' && el.points.length === 1) el.points.push({ ...el.points[0] })
   // A route released almost on the player was a mis-tap: drop it, stay ready.
   if (el.type === 'arrow' && dist(el.points[0], el.points[1]) < 0.02) return
+  if (el.type === 'arrow') finishRoute(el)
+  else commit([...elements.value, el])
+}
+
+// Back to select with the new arrow selected so it can be curved right away.
+// Selected after the tool watcher has run, which clears the selection.
+function finishRoute(el: ArrowElement) {
   commit([...elements.value, el])
-  // Back to select with the new arrow selected so it can be curved right away.
-  // Selected after the tool watcher has run, which clears the selection.
-  if (el.type === 'arrow') {
-    tool.value = 'select'
-    nextTick(() => { selectedId.value = el.id })
-  }
+  tool.value = 'select'
+  nextTick(() => { selectedId.value = el.id })
 }
 
 // ---------- player menu: pick a move, then drag it out ----------
@@ -647,12 +678,53 @@ function routeMarker(): MarkerElement | null {
 
 // Start the arrow just outside the player's circle, on the side facing p.
 function routeTail(center: Point, p: Point): Point {
+  return edgePoint(center, p, MARKER_R + 4)
+}
+
+// The point `gap` SVG units out from a player's centre, towards p.
+function edgePoint(center: Point, p: Point, gap: number): Point {
   const dx = (p.x - center.x) * W.value
   const dy = (p.y - center.y) * H.value
   const len = Math.hypot(dx, dy)
   if (len < 1) return center
-  const off = (MARKER_R + 4) / len
+  const off = gap / len
   return { x: center.x + (dx * off) / W.value, y: center.y + (dy * off) / H.value }
+}
+
+// The arrowhead is centred on the line's end and its tip pokes ~10 units past
+// it, so a pass's head stops this far out for the tip to meet the circle.
+const HEAD_GAP = MARKER_R + 14
+
+// The player marker under p, if any (other than `exceptId`).
+function markerAt(p: Point, exceptId?: string): MarkerElement | null {
+  return [...elements.value].reverse().find(
+    (el): el is MarkerElement => el.type === 'marker' && el.id !== exceptId && dist(p, el.at) < HIT_MARKER,
+  ) ?? null
+}
+
+// A pass tied to players gets its ends from where those players stand now,
+// each on the edge of the circle facing the other end (or the curve's bend).
+function resolveArrow(el: ArrowElement, list: DiagramElement[]): ArrowElement {
+  if (!el.fromId && !el.toId) return el
+  const find = (id?: string) =>
+    id ? list.find((m): m is MarkerElement => m.type === 'marker' && m.id === id) : undefined
+  const from = find(el.fromId)
+  const to = find(el.toId)
+  if (!from && !to) return el
+  const a = from?.at ?? el.points[0]
+  const b = to?.at ?? el.points[1]
+  return {
+    ...el,
+    points: [
+      from ? edgePoint(a, el.control ?? b, MARKER_R + 4) : el.points[0],
+      to ? edgePoint(b, el.control ?? a, HEAD_GAP) : el.points[1],
+    ],
+  }
+}
+
+// Re-seat every tied pass on its players (after a player moved).
+function syncAttached(list: DiagramElement[]): DiagramElement[] {
+  return list.map((el) => (el.type === 'arrow' ? resolveArrow(el, list) : el))
 }
 
 const playerMenuRef = ref<HTMLElement | null>(null)
@@ -1025,11 +1097,12 @@ function screenBar(el: ArrowElement): { x1: number; y1: number; x2: number; y2: 
   }
 }
 
-// All elements to render, substituting live drag copy when dragging
+// All elements to render, substituting live drag copy when dragging; tied
+// passes follow a player being dragged (or turn with a bend being dragged).
 const allElements = computed<DiagramElement[]>(() => {
   const base = drawing.value ? [...elements.value, drawing.value] : [...elements.value]
   if (!dragLive.value) return base
-  return base.map((el) => (el.id === dragLive.value!.id ? dragLive.value! : el))
+  return syncAttached(base.map((el) => (el.id === dragLive.value!.id ? dragLive.value! : el)))
 })
 
 const teamColor = { home: '#cc0000', away: '#e8743b', ball: '#e7c993' } as const
@@ -1422,7 +1495,8 @@ defineExpose({ exportPng })
         class="pointer-events-auto absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink-900/90 px-3 py-1.5 text-xs text-chalk shadow-lg"
         @pointerdown.stop
       >
-        Drag from the player to where the {{ routeLabel.toLowerCase() }} ends
+        <template v-if="arrowStyle === 'pass'">Tap the player receiving the pass, or drag to a spot</template>
+        <template v-else>Drag from the player to where the {{ routeLabel.toLowerCase() }} ends</template>
         <button class="text-ink-400 hover:text-chalk" @click="tool = 'select'">Cancel</button>
       </div>
 
