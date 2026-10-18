@@ -25,7 +25,7 @@ const perGame = (n: number) => (props.games ? (n / props.games).toFixed(1) : 'â€
 </script>
 
 <template>
-  <table class="w-full text-right font-mono text-sm">
+  <table class="w-full text-right font-mono text-sm" style="height: calc(100dvh - 300px);">
     <thead class="text-ink-500">
       <tr class="border-b border-ink-700">
         <th class="py-1 text-left">Player</th>

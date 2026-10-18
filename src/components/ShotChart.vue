@@ -122,7 +122,7 @@ const zoneData = computed(() => {
 // where shots are rare), wherever the letterboxed court ends up.
 const legendPos = computed(() => {
   const { scale, offsetX, offsetY } = fitCourt(svgBox.value.w, svgBox.value.h)
-  return { left: `${offsetX + 8}px`, top: `${offsetY + VB_H * scale - 30}px` }
+  return { left: `${offsetX + 12}px`, top: `${offsetY + VB_H * scale - 40}px` }
 })
 
 // Where the Made/Miss popup sits, in px within the chart wrapper. Derived from
@@ -363,10 +363,10 @@ function shotPath(shot: ShotEvent): string {
       <!-- Legend + Shots/Zones toggle, in the court's bottom-left corner -->
       <div
         :style="legendPos"
-        class="absolute z-10 flex items-center gap-2.5 rounded-md bg-ink-900/85 py-0.5 pl-0.5 pr-2 text-[11px] text-ink-500"
+        class="absolute z-10 opacity-90 flex items-center gap-2.5 rounded-md bg-ink-900/85 py-0.5 pl-0.5 ml-1 pr-2 text-[11px] text-ink-500"
         :title="!canEdit ? undefined : playerId ? 'Tap the court to add a shot' : 'Select a player to add shots'"
       >
-        <span class="flex rounded bg-ink-800 p-0.5" role="group" aria-label="Chart view">
+        <span class="flex rounded p-0.5" role="group" aria-label="Chart view">
           <button
             v-for="v in (['shots', 'zones'] as const)"
             :key="v"
@@ -485,19 +485,19 @@ function shotPath(shot: ShotEvent): string {
           fill="none" stroke="#374151" stroke-width="1" stroke-dasharray="4 3"/>
 
         <!-- Zone labels: made/attempts and make rate -->
-        <g v-if="view === 'zones'" pointer-events="none" font-family="ui-monospace, monospace" text-anchor="middle">
+        <g v-if="view === 'zones'" pointer-events="none" text-anchor="middle">
           <template v-for="z in zoneData" :key="z.id">
             <text
               v-if="z.stat.att"
               :x="z.cx" :y="z.cy"
               fill="#f5f5f4" stroke="#0b0b0c" stroke-width="3" paint-order="stroke"
-              font-size="15" font-weight="700"
+              font-size="11" font-weight="700"
             ><title>{{ z.label }}: {{ z.stat.made }}/{{ z.stat.att }} ({{ z.stat.pct }}%)</title>{{ z.stat.pct }}%</text>
             <text
               v-if="z.stat.att"
               :x="z.cx" :y="z.cy + 14"
               fill="#d6d3d1" stroke="#0b0b0c" stroke-width="3" paint-order="stroke"
-              font-size="11"
+              font-size="10"
             >{{ z.stat.made }}/{{ z.stat.att }}</text>
           </template>
         </g>

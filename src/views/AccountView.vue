@@ -174,163 +174,171 @@ async function handleSignOut() {
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-3xl flex-col gap-5 overflow-y-auto pb-24 pt-2" style="height: calc(100dvh - 80px)">
-    <h1 class="font-stencil text-2xl font-bold uppercase tracking-wide text-chalk">Account</h1>
+  <div class="flex gap-2 overflow-y-auto pb-24 pt-2" style="height: calc(100dvh - 80px)">
+    <div class="flex flex-col gap-5">
+      <h1 class="font-stencil text-2xl font-bold uppercase tracking-wide text-chalk">Account</h1>
 
-    <!-- Who's signed in -->
-    <section class="card flex flex-wrap items-center gap-3 p-4">
-      <div class="min-w-0 grow">
-        <p class="truncate font-semibold">{{ profile?.display_name || user?.email }}</p>
-        <p v-if="profile?.display_name" class="truncate text-sm text-ink-500">{{ user?.email }}</p>
-      </div>
-      <span v-if="migrated" class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="roleTone(role)">{{ ROLE_LABEL[role] }}</span>
-      <button class="btn-danger py-1.5 text-sm" :disabled="busy" @click="handleSignOut">Sign out</button>
-    </section>
-
-    <p v-if="!migrated" class="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
-      Teams and roles aren't set up yet — run the newest migration at the end of
-      <code class="font-mono">supabase/schema.sql</code> in the Supabase SQL Editor.
-    </p>
-
-    <template v-else>
-      <!-- Current team -->
-      <section>
-        <h2 class="label">Showing team</h2>
-        <div v-if="teams.length" class="flex flex-wrap gap-2">
-          <button
-            v-for="t in teams"
-            :key="t.id"
-            class="rounded-full border px-3 py-1.5 text-sm font-semibold transition"
-            :class="currentTeamId === t.id ? 'border-rim bg-rim text-white' : 'border-ink-600 text-ink-400 hover:text-chalk'"
-            :aria-pressed="currentTeamId === t.id"
-            @click="currentTeamId = t.id"
-          >{{ t.name }}</button>
-        </div>
-        <p v-else class="text-sm text-ink-500">
-          {{ canEdit ? "You're not on a team yet — create one below." : "You're not on a team yet. Ask your coach to add you." }}
-        </p>
-      </section>
-
-      <!-- Teams: coaches and admins -->
-      <section v-if="canEdit" class="flex flex-col gap-3">
-        <h2 class="font-stencil text-lg font-bold">Teams</h2>
-
-        <article v-for="t in teams" :key="t.id" class="card overflow-hidden">
-          <header class="flex items-center gap-2 p-3">
-            <template v-if="renaming.id === t.id">
-              <input v-model="renaming.name" class="input py-1.5" aria-label="Team name" @keyup.enter="saveRename(t)" />
-              <button class="text-home" title="Save" aria-label="Save" @click="saveRename(t)"><CheckIcon class="h-5 w-5" /></button>
-              <button class="text-ink-500" title="Cancel" aria-label="Cancel" @click="renaming.id = null"><XMarkIcon class="h-5 w-5" /></button>
-            </template>
-            <template v-else>
-              <button class="grow text-left font-semibold" :aria-expanded="openTeamId === t.id" @click="openTeamId = openTeamId === t.id ? null : t.id">
-                {{ t.name }}
-                <span class="ml-2 text-xs font-normal text-ink-500">
-                  {{ coachesOf(t.id).length }} coach{{ coachesOf(t.id).length === 1 ? '' : 'es' }} ·
-                  {{ rosterOf(t.id).length }} player{{ rosterOf(t.id).length === 1 ? '' : 's' }}
-                </span>
-              </button>
-              <button class="text-ink-500 hover:text-chalk" title="Rename team" aria-label="Rename team" @click="renaming.id = t.id; renaming.name = t.name"><PencilIcon class="h-4 w-4" /></button>
-              <button class="text-red-500 hover:text-red-300" title="Delete team" aria-label="Delete team" @click="onDeleteTeam(t)"><TrashIcon class="h-4 w-4" /></button>
-            </template>
-          </header>
-
-          <div v-if="openTeamId === t.id" class="grid gap-4 border-t border-ink-700/60 p-3 md:grid-cols-2">
-            <!-- Coaches -->
-            <div>
-              <h3 class="label">Coaches</h3>
-              <ul class="mb-2 space-y-1 text-sm">
-                <li v-for="c in coachesOf(t.id)" :key="c.id" class="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-ink-800">
-                  <span class="grow truncate">{{ personName(c) }}</span>
-                  <button class="text-ink-500 hover:text-red-400" title="Remove coach" :aria-label="`Remove ${personName(c)}`" @click="onRemoveCoach(t.id, c)"><XMarkIcon class="h-4 w-4" /></button>
-                </li>
-                <li v-if="!coachesOf(t.id).length" class="px-2 text-ink-500">No coaches yet.</li>
-              </ul>
-              <select v-if="coachCandidates(t.id).length" class="input py-1.5 text-sm" aria-label="Add a coach" @change="onAddCoach(t.id, $event)">
-                <option value="">+ Add a coach…</option>
-                <option v-for="p in coachCandidates(t.id)" :key="p.id" :value="p.id">{{ personName(p) }}</option>
-              </select>
-              <p v-else-if="isAdmin" class="text-xs text-ink-500">Invite more coaches under People.</p>
-            </div>
-
-            <!-- Roster -->
-            <div>
-              <h3 class="label">Roster</h3>
-              <ul class="mb-2 space-y-1 text-sm">
-                <li v-for="p in rosterOf(t.id)" :key="p.id" class="rounded-lg px-2 py-1 hover:bg-ink-800">
-                  <div class="flex items-center gap-2">
-                    <span class="w-7 shrink-0 text-right font-mono text-ink-500">{{ p.number ?? '—' }}</span>
-                    <span class="grow truncate">
-                      {{ p.name }}
-                      <span v-if="teamsOfPlayer(p.id).length > 1" class="text-xs text-ink-500">· {{ teamsOfPlayer(p.id).join(', ') }}</span>
-                    </span>
-                    <span v-if="p.user_id" class="text-[11px] text-home" title="Has a login">login ✓</span>
-                    <button
-                      v-else
-                      class="text-ink-500 hover:text-chalk"
-                      title="Invite this player to sign in" :aria-label="`Invite ${p.name} to sign in`"
-                      @click="invitingPlayer.id = invitingPlayer.id === p.id ? null : p.id; invitingPlayer.email = ''"
-                    ><EnvelopeIcon class="h-4 w-4" /></button>
-                    <button class="text-ink-500 hover:text-red-400" title="Remove from team" :aria-label="`Remove ${p.name}`" @click="onRemovePlayer(t.id, p)"><XMarkIcon class="h-4 w-4" /></button>
-                  </div>
-                  <form v-if="invitingPlayer.id === p.id" class="mt-1.5 flex gap-1.5" @submit.prevent="onInvitePlayer(p)">
-                    <input v-model="invitingPlayer.email" type="email" class="input py-1 text-xs" placeholder="player@email.com" :aria-label="`${p.name}'s email`" />
-                    <button class="btn-primary shrink-0 px-2 py-1 text-xs" :disabled="busy">Invite</button>
-                  </form>
-                </li>
-                <li v-if="!rosterOf(t.id).length" class="px-2 text-ink-500">No players yet.</li>
-              </ul>
-              <select v-if="playerCandidates(t.id).length" class="input mb-2 py-1.5 text-sm" aria-label="Add an existing player" @change="onAddExistingPlayer(t.id, $event)">
-                <option value="">+ Add an existing player (e.g. from JV)…</option>
-                <option v-for="p in playerCandidates(t.id)" :key="p.id" :value="p.id">#{{ p.number ?? '—' }} {{ p.name }}</option>
-              </select>
-              <form class="flex gap-1.5" @submit.prevent="onCreatePlayer(t.id)">
-                <input v-model.number="newPlayer.number" type="number" min="0" class="input !w-16 shrink-0 py-1.5 text-center text-sm" placeholder="#" aria-label="Number" />
-                <input v-model="newPlayer.name" class="input py-1.5 text-sm" placeholder="New player name" aria-label="New player name" />
-                <button class="btn-ghost shrink-0 px-2 py-1.5" title="Add player" aria-label="Add player"><PlusIcon class="h-4 w-4" /></button>
-              </form>
-            </div>
+      <!-- Who's signed in -->
+      <section class="card flex flex-wrap items-center p-4">
+        <div class="min-w-0 grow flex gap-3">
+          <div class="flex flex-col justify-center">
+            <p class="truncate font-semibold">{{ profile?.display_name || user?.email }}</p>
+            <p v-if="profile?.display_name" class="truncate text-sm text-ink-500">{{ user?.email }}</p>
           </div>
-        </article>
-
-        <form class="flex gap-2" @submit.prevent="onCreateTeam">
-          <input v-model="newTeamName" class="input" placeholder="New team, e.g. Girls Varsity" aria-label="New team name" />
-          <button class="btn-primary shrink-0" :disabled="!newTeamName.trim()"><PlusIcon class="h-5 w-5" />Team</button>
-        </form>
+          <div class="flex-1"></div>
+          <span v-if="migrated" class="inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold" :class="roleTone(role)">{{ ROLE_LABEL[role] }}</span>
+          <button class="btn-danger py-1.5 text-sm" :disabled="busy" @click="handleSignOut">Sign out</button>
+        </div>
       </section>
 
-      <!-- People: admins only -->
-      <section v-if="isAdmin" class="flex flex-col gap-3">
-        <h2 class="font-stencil text-lg font-bold">People</h2>
-        <ul class="card divide-y divide-ink-700/60">
-          <li v-for="p in profiles" :key="p.id" class="flex items-center gap-3 px-3 py-2 text-sm">
-            <div class="min-w-0 grow">
-              <p class="truncate">{{ p.display_name || p.email }}</p>
-              <p v-if="p.display_name" class="truncate text-xs text-ink-500">{{ p.email }}</p>
-            </div>
-            <select class="input !w-28 shrink-0 py-1 text-xs" :value="p.role" :aria-label="`Role for ${p.email}`" @change="onChangeRole(p, $event)">
-              <option value="admin">Admin</option>
+      <p v-if="!migrated" class="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
+        Teams and roles aren't set up yet — run the newest migration at the end of
+        <code class="font-mono">supabase/schema.sql</code> in the Supabase SQL Editor.
+      </p>
+
+      <template v-else>
+        <!-- People: admins only -->
+        <section v-if="isAdmin" class="flex flex-col gap-3">
+          <h2 class="font-stencil text-lg font-bold">People</h2>
+          <ul class="card divide-y divide-ink-700/60">
+            <li v-for="p in profiles" :key="p.id" class="flex items-center gap-3 px-3 py-2 text-sm">
+              <div class="min-w-0 grow">
+                <p class="truncate">{{ p.display_name || p.email }}</p>
+                <p v-if="p.display_name" class="truncate text-xs text-ink-500">{{ p.email }}</p>
+              </div>
+              <select class="input !w-28 shrink-0 py-1 text-xs" :value="p.role" :aria-label="`Role for ${p.email}`" @change="onChangeRole(p, $event)">
+                <option value="admin">Admin</option>
+                <option value="coach">Coach</option>
+                <option value="player">Player</option>
+              </select>
+            </li>
+          </ul>
+          <form class="card grid gap-2 p-3 sm:grid-cols-[1fr_1fr_7rem_auto]" @submit.prevent="onInvitePerson">
+            <input v-model="newPerson.email" type="email" class="input min-w-0 py-1.5 text-sm" placeholder="Email" aria-label="Email" />
+            <input v-model="newPerson.name" class="input min-w-0 py-1.5 text-sm" placeholder="Name (optional)" aria-label="Name" />
+            <select v-model="newPerson.role" class="input py-1.5 text-sm" aria-label="Role">
               <option value="coach">Coach</option>
+              <option value="admin">Admin</option>
               <option value="player">Player</option>
             </select>
-          </li>
-        </ul>
-        <form class="card grid gap-2 p-3 sm:grid-cols-[1fr_1fr_7rem_auto]" @submit.prevent="onInvitePerson">
-          <input v-model="newPerson.email" type="email" class="input min-w-0 py-1.5 text-sm" placeholder="Email" aria-label="Email" />
-          <input v-model="newPerson.name" class="input min-w-0 py-1.5 text-sm" placeholder="Name (optional)" aria-label="Name" />
-          <select v-model="newPerson.role" class="input py-1.5 text-sm" aria-label="Role">
-            <option value="coach">Coach</option>
-            <option value="admin">Admin</option>
-            <option value="player">Player</option>
-          </select>
-          <button class="btn-primary py-1.5 text-sm" :disabled="busy || !newPerson.email.trim()"><EnvelopeIcon class="h-4 w-4" />Invite</button>
-        </form>
-        <p class="text-xs text-ink-500">
-          Invites arrive by email; the link opens a page to choose a password. Add new coaches to their teams above.
-        </p>
-      </section>
+            <button class="btn-primary py-1.5 text-sm" :disabled="busy || !newPerson.email.trim()"><EnvelopeIcon class="h-4 w-4" />Invite</button>
+          </form>
+          <p class="text-xs text-ink-500">
+            Invites arrive by email; the link opens a page to choose a password. Add new coaches to their teams above.
+          </p>
+        </section>
+        
+        <section v-if="isAdmin" class="flex flex-col gap-2">
+          <h2 class="font-stencil text-lg font-bold">New Team</h2>
+          <form class="flex gap-2" @submit.prevent="onCreateTeam">
+            <input v-model="newTeamName" class="input" placeholder="New team, e.g. Girls Varsity" aria-label="New team name" />
+            <button class="btn-primary shrink-0" :disabled="!newTeamName.trim()"><PlusIcon class="h-5 w-5" />Team</button>
+          </form>
+        </section>
 
-      <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
-    </template>
+        <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
+      </template>
+    </div>
+  
+    <!-- Teams: coaches and admins -->
+    <div v-if="canEdit" class="flex flex-col gap-3 mt-10">
+      <div class="flex gap-2 items-center">
+        <h2 class="font-stencil text-lg font-bold">Teams</h2>
+        <!-- Current team -->
+        <section>
+          <div v-if="teams.length" class="flex flex-wrap gap-2">
+            <button
+              v-for="t in teams"
+              :key="t.id"
+              class="rounded-full border px-3 py-1.5 text-sm font-semibold transition"
+              :class="currentTeamId === t.id ? 'border-rim bg-rim text-white' : 'border-ink-600 text-ink-400 hover:text-chalk'"
+              :aria-pressed="currentTeamId === t.id"
+              @click="currentTeamId = t.id"
+            >{{ t.name }}</button>
+          </div>
+          <p v-else class="text-sm text-ink-500">
+            {{ canEdit ? "You're not on a team yet — create one below." : "You're not on a team yet. Ask your coach to add you." }}
+          </p>
+        </section>
+      </div>
+
+      <article v-for="t in teams" :key="t.id" class="card overflow-hidden">
+        <header class="flex items-center gap-2 p-3">
+          <template v-if="renaming.id === t.id">
+            <input v-model="renaming.name" class="input py-1.5" aria-label="Team name" @keyup.enter="saveRename(t)" />
+            <button class="text-home" title="Save" aria-label="Save" @click="saveRename(t)"><CheckIcon class="h-5 w-5" /></button>
+            <button class="text-ink-500" title="Cancel" aria-label="Cancel" @click="renaming.id = null"><XMarkIcon class="h-5 w-5" /></button>
+          </template>
+          <template v-else>
+            <button class="grow text-left font-semibold" :aria-expanded="openTeamId === t.id" @click="openTeamId = openTeamId === t.id ? null : t.id">
+              {{ t.name }}
+              <span class="ml-2 text-xs font-normal text-ink-500">
+                {{ coachesOf(t.id).length }} coach{{ coachesOf(t.id).length === 1 ? '' : 'es' }} ·
+                {{ rosterOf(t.id).length }} player{{ rosterOf(t.id).length === 1 ? '' : 's' }}
+              </span>
+            </button>
+            <button class="text-ink-500 hover:text-chalk" title="Rename team" aria-label="Rename team" @click="renaming.id = t.id; renaming.name = t.name"><PencilIcon class="h-4 w-4" /></button>
+            <button class="text-red-500 hover:text-red-300" title="Delete team" aria-label="Delete team" @click="onDeleteTeam(t)"><TrashIcon class="h-4 w-4" /></button>
+          </template>
+        </header>
+
+        <div v-if="openTeamId === t.id" class="grid gap-4 border-t border-ink-700/60 p-3 md:grid-cols-2">
+          <!-- Coaches -->
+          <div>
+            <h3 class="label">Coaches</h3>
+            <ul class="mb-2 space-y-1 text-sm">
+              <li v-for="c in coachesOf(t.id)" :key="c.id" class="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-ink-800">
+                <span class="grow truncate">{{ personName(c) }}</span>
+                <button class="text-ink-500 hover:text-red-400" title="Remove coach" :aria-label="`Remove ${personName(c)}`" @click="onRemoveCoach(t.id, c)"><XMarkIcon class="h-4 w-4" /></button>
+              </li>
+              <li v-if="!coachesOf(t.id).length" class="px-2 text-ink-500">No coaches yet.</li>
+            </ul>
+            <select v-if="coachCandidates(t.id).length" class="input py-1.5 text-sm" aria-label="Add a coach" @change="onAddCoach(t.id, $event)">
+              <option value="">+ Add a coach…</option>
+              <option v-for="p in coachCandidates(t.id)" :key="p.id" :value="p.id">{{ personName(p) }}</option>
+            </select>
+            <p v-else-if="isAdmin" class="text-xs text-ink-500">Invite more coaches under People.</p>
+          </div>
+
+          <!-- Roster -->
+          <div>
+            <h3 class="label">Roster</h3>
+            <ul class="mb-2 space-y-1 text-sm">
+              <li v-for="p in rosterOf(t.id)" :key="p.id" class="rounded-lg px-2 py-1 hover:bg-ink-800">
+                <div class="flex items-center gap-2">
+                  <span class="w-7 shrink-0 text-right font-mono text-ink-500">{{ p.number ?? '—' }}</span>
+                  <span class="grow truncate">
+                    {{ p.name }}
+                    <span v-if="teamsOfPlayer(p.id).length > 1" class="text-xs text-ink-500">· {{ teamsOfPlayer(p.id).join(', ') }}</span>
+                  </span>
+                  <span v-if="p.user_id" class="text-[11px] text-home" title="Has a login">login ✓</span>
+                  <button
+                    v-else
+                    class="text-ink-500 hover:text-chalk"
+                    title="Invite this player to sign in" :aria-label="`Invite ${p.name} to sign in`"
+                    @click="invitingPlayer.id = invitingPlayer.id === p.id ? null : p.id; invitingPlayer.email = ''"
+                  ><EnvelopeIcon class="h-4 w-4" /></button>
+                  <button class="text-ink-500 hover:text-red-400" title="Remove from team" :aria-label="`Remove ${p.name}`" @click="onRemovePlayer(t.id, p)"><XMarkIcon class="h-4 w-4" /></button>
+                </div>
+                <form v-if="invitingPlayer.id === p.id" class="mt-1.5 flex gap-1.5" @submit.prevent="onInvitePlayer(p)">
+                  <input v-model="invitingPlayer.email" type="email" class="input py-1 text-xs" placeholder="player@email.com" :aria-label="`${p.name}'s email`" />
+                  <button class="btn-primary shrink-0 px-2 py-1 text-xs" :disabled="busy">Invite</button>
+                </form>
+              </li>
+              <li v-if="!rosterOf(t.id).length" class="px-2 text-ink-500">No players yet.</li>
+            </ul>
+            <select v-if="playerCandidates(t.id).length" class="input mb-2 py-1.5 text-sm" aria-label="Add an existing player" @change="onAddExistingPlayer(t.id, $event)">
+              <option value="">+ Add an existing player (e.g. from JV)…</option>
+              <option v-for="p in playerCandidates(t.id)" :key="p.id" :value="p.id">#{{ p.number ?? '—' }} {{ p.name }}</option>
+            </select>
+            <form class="flex gap-1.5" @submit.prevent="onCreatePlayer(t.id)">
+              <input v-model.number="newPlayer.number" type="number" min="0" class="input !w-16 shrink-0 py-1.5 text-center text-sm" placeholder="#" aria-label="Number" />
+              <input v-model="newPlayer.name" class="input py-1.5 text-sm" placeholder="New player name" aria-label="New player name" />
+              <button class="btn-ghost shrink-0 px-2 py-1.5" title="Add player" aria-label="Add player"><PlusIcon class="h-4 w-4" /></button>
+            </form>
+          </div>
+        </div>
+      </article>
+    </div>
   </div>
 </template>

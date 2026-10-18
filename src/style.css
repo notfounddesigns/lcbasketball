@@ -131,14 +131,6 @@ input[type='number']::-webkit-inner-spin-button {
   }
 }
 
-/* Stat buttons share the column's height: tall on a portrait iPad, shorter in
-   landscape so FOUL never ends up under the tab bar. */
-.stat-btn {
-  flex: 1 1 0;
-  min-height: 40px;
-  max-height: 64px;
-}
-
 /* Stats tracker sizing.
    Phones: the panel scrolls; the court is as wide as the screen at its true
    aspect ratio. Tablet+: the box score takes only the height it needs (capped)

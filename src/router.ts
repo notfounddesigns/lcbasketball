@@ -51,7 +51,7 @@ router.beforeEach(async (to) => {
     await ensureAccess()
     if (!canEdit.value) return { path: '/plays' }
   }
-  if (import.meta.env.DEV) { return true }
+  // if (import.meta.env.DEV) { return true }
 
   if (to.meta.public) {
     // Nothing to do on the login screen once you're already signed in.

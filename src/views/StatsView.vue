@@ -698,7 +698,7 @@ watch(
 </script>
 
 <template>
-  <section class="flex flex-col gap-4">
+  <section class="flex flex-col gap-3">
     <!-- Sticky page header: page title + tabs, or the open game's controls -->
     <div
       data-stats-header
@@ -710,7 +710,7 @@ watch(
           <span class="font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase text-chalk">{{ isScout ? 'Report' : 'Games' }}</span>
         </button>
         <button
-          class="group text-left font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase leading-tight"
+          class="group ml-2 text-left font-stencil text-[clamp(0.875rem,2vw,1.15rem)] font-bold uppercase leading-tight"
           :title="isScout ? 'Edit matchup details' : 'Edit game details'"
           @click="openEditGameSheet()"
         >
@@ -720,7 +720,7 @@ watch(
         </button>
         <button
           v-if="!editingScore"
-          class="inline-flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs hover:text-chalk"
+          class="inline-flex ml-2 items-center gap-1 rounded-lg border border-ink-700 bg-ink-800 px-2 py-1 font-mono text-xs hover:text-chalk"
           :title="hasFinal(activeGame) ? 'Edit final score' : 'Record final score'"
           @click="startEditScore"
         >
@@ -758,34 +758,11 @@ watch(
 
         <!-- Period selector, team fouls, undo, export -->
         <div class="ml-auto flex items-center gap-1">
-          <span
-            class="mr-1 rounded px-2 py-1 text-[11px] font-semibold"
-            :class="teamFouls >= BONUS_AT ? 'bg-rim/20 text-rim' : 'text-ink-500'"
-            :title="`Team fouls this ${activePeriod > 4 ? 'overtime (4th quarter counts carry over)' : 'quarter'}`"
-          >Fouls {{ teamFouls }}<template v-if="teamFouls >= BONUS_AT"> · BONUS</template></span>
           <button
-            v-for="p in PERIODS"
-            :key="p.value"
-            class="rounded px-2.5 py-1 text-xs font-bold transition"
-            :class="activePeriod === p.value ? 'bg-rim text-white' : 'bg-ink-700 text-ink-500 hover:text-chalk'"
-            @click="activePeriod = p.value"
-          >{{ p.label }}</button>
-          <button
-            class="rounded px-2 py-1 text-xs font-bold text-ink-500 hover:text-chalk"
-            title="Add another overtime" aria-label="Add another overtime"
-            @click="addOvertime"
-          >+OT</button>
-          <button
-            v-if="selectedPlayer && selectedHasEvents"
-            class="ml-1 hidden rounded-lg bg-away p-1.5 text-white hover:bg-away/90 md:inline-flex"
-            title="Undo last stat" aria-label="Undo last stat"
-            @click="onUndo(selectedPlayerId!)"
-          ><ArrowUturnLeftIcon class="h-5 w-5" /></button>
-          <button
-            class="ml-1 hidden rounded-lg border border-ink-700 bg-ink-800 p-1.5 text-ink-400 hover:text-chalk md:inline-flex"
+            class="text-sm items-center gap-2 ml-1 hidden rounded-lg border border-ink-700 bg-ink-800 p-1.5 text-ink-400 hover:text-chalk md:inline-flex"
             title="Export box score (CSV)" aria-label="Export box score"
             @click="exportCsv"
-          ><ArrowDownTrayIcon class="h-5 w-5" /></button>
+          >Export<ArrowDownTrayIcon class="h-5 w-5" /></button>
         </div>
       </template>
       <!-- Mode tabs -->
@@ -893,9 +870,9 @@ watch(
         <div ref="trackerEl" class="flex gap-3" :style="{ '--tracker-top': `${trackerTop}px` }">
 
           <!-- Stat column (tablet/desktop; phones get the bottom stat pad) -->
-          <div class="stat-column hidden w-32 shrink-0 flex-col gap-2 md:flex">
+          <div class="stat-column hidden w-20 overflow-y-auto shrink-0 flex-col gap-2 md:flex">
             <button
-              class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-ink-700 bg-ink-800 py-2 text-sm text-gray-300 hover:text-chalk"
+              class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-ink-700 bg-ink-800 py-0.5 text-sm text-gray-300 hover:text-chalk"
               @click="showRosterDrawer = true">
               <UserGroupIcon class="h-5 w-5" />Roster
             </button>
@@ -905,8 +882,8 @@ watch(
             <button
               v-for="b in FT_STATS"
               :key="b.stat"
-              class="stat-btn rounded-lg text-sm font-bold transition"
-              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
+              class="py-2 px-0.75 rounded-full text-xs font-bold transition"
+              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-50']"
               :disabled="!selectedPlayerId"
               @click="tap(b.stat)"
             >{{ b.label }}</button>
@@ -914,8 +891,8 @@ watch(
             <button
               v-for="b in ACTION_STATS"
               :key="b.stat"
-              class="stat-btn rounded-lg text-sm font-bold transition"
-              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-30']"
+              class="py-2 px-0.75 rounded-lg text-xs font-bold transition"
+              :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-50']"
               :disabled="!selectedPlayerId"
               @click="tap(b.stat)"
             >{{ b.label }}</button>
@@ -929,70 +906,98 @@ watch(
               :player-id="selectedPlayerId"
               :period="activePeriod"/>
 
-            <!-- Box score (tap a row to select the player) -->
-            <div class="boxscore card min-w-0 overflow-auto p-3 lg:w-1/2">
-              <h2 class="mb-2 font-stencil font-bold">
-                Box Score<span v-if="boxPeriod !== 'all'" class="ml-2 font-sans text-xs font-normal text-ink-500">{{ periodLabel(boxPeriod) }} only</span>
-              </h2>
-              <table class="w-full text-right font-mono text-sm">
-                <thead class="text-ink-500">
-                  <tr class="border-b border-ink-700">
-                    <th class="py-1 text-left">Player</th>
-                    <th>PTS</th><th>FG</th><th>3P</th><th>FT</th>
-                    <th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th><th>PF</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="r in shownBoxScore"
-                    :key="r.player_id"
-                    class="cursor-pointer border-b border-ink-800 transition"
-                    :class="selectedPlayerId === r.player_id
-                      ? 'bg-ink-700'
-                      : 'hover:bg-ink-800/70'"
-                    @click="selectedPlayerId = selectedPlayerId === r.player_id ? null : r.player_id"
-                  >
-                    <td class="py-2 text-left">
-                      <span
-                        class="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                        :class="playedIds.has(r.player_id) ? 'bg-green-400' : 'bg-transparent'"
-                        :title="playedIds.has(r.player_id) ? 'Has stats this game' : undefined"
-                      />
-                      <span class="font-mono text-xs text-ink-500">#{{ r.number ?? '—' }}</span>
-                      <span class="ml-1">{{ r.name }}</span>
-                    </td>
-                    <td class="font-bold text-chalk relative">{{ r.pts }}<StatFlash :items="flashesFor(r.player_id, 'pts')" /></td>
-                    <td class="relative">{{ r.fgm }}/{{ r.fga }}<StatFlash :items="flashesFor(r.player_id, 'fg')" /></td>
-                    <td class="relative">{{ r.tpm }}/{{ r.tpa }}<StatFlash :items="flashesFor(r.player_id, 'tp')" /></td>
-                    <td class="relative">{{ r.ftm }}/{{ r.fta }}<StatFlash :items="flashesFor(r.player_id, 'ft')" /></td>
-                    <td class="relative">{{ r.reb }}<StatFlash :items="flashesFor(r.player_id, 'reb')" /></td>
-                    <td class="relative">{{ r.ast }}<StatFlash :items="flashesFor(r.player_id, 'ast')" /></td>
-                    <td class="relative">{{ r.stl }}<StatFlash :items="flashesFor(r.player_id, 'stl')" /></td>
-                    <td class="relative">{{ r.blk }}<StatFlash :items="flashesFor(r.player_id, 'blk')" /></td>
-                    <td class="relative">{{ r.tov }}<StatFlash :items="flashesFor(r.player_id, 'tov')" /></td>
-                    <td class="relative" :class="boxPeriod === 'all' ? foulTone(r.player_id) : ''" :title="fouls.get(r.player_id) ? `${fouls.get(r.player_id)} fouls this game` : undefined">{{ r.pf }}<StatFlash :items="flashesFor(r.player_id, 'pf')" /></td>
-                  </tr>
-                </tbody>
-                <tfoot v-if="shownBoxScore.length" class="font-semibold text-chalk">
-                  <tr class="border-t border-ink-600">
-                    <td class="py-2 text-left">Team</td>
-                    <td>{{ boxScoreTotals.pts }}</td>
-                    <td :title="formatPct(boxScoreTotals.fgm, boxScoreTotals.fga)">{{ boxScoreTotals.fgm }}/{{ boxScoreTotals.fga }}</td>
-                    <td :title="formatPct(boxScoreTotals.tpm, boxScoreTotals.tpa)">{{ boxScoreTotals.tpm }}/{{ boxScoreTotals.tpa }}</td>
-                    <td :title="formatPct(boxScoreTotals.ftm, boxScoreTotals.fta)">{{ boxScoreTotals.ftm }}/{{ boxScoreTotals.fta }}</td>
-                    <td>{{ boxScoreTotals.reb }}</td><td>{{ boxScoreTotals.ast }}</td><td>{{ boxScoreTotals.stl }}</td>
-                    <td>{{ boxScoreTotals.blk }}</td><td>{{ boxScoreTotals.tov }}</td><td>{{ boxScoreTotals.pf }}</td>
-                  </tr>
-                  <tr class="text-xs font-normal text-ink-500">
-                    <td class="text-left">Shooting</td>
-                    <td></td>
-                    <td>{{ formatPct(boxScoreTotals.fgm, boxScoreTotals.fga) }}</td>
-                    <td>{{ formatPct(boxScoreTotals.tpm, boxScoreTotals.tpa) }}</td>
-                    <td>{{ formatPct(boxScoreTotals.ftm, boxScoreTotals.fta) }}</td>
-                    <td colspan="6"></td>
-                  </tr>
-                </tfoot>
-              </table>
+            <div class="flex flex-col gap-3 boxscore min-w-0 overflow-auto lg:w-1/2">
+              <!-- Period selector, team fouls, undo, export -->
+              <div class="ml-auto flex items-center gap-1">
+                <span
+                  class="mr-1 rounded px-2 py-1 text-[11px] font-semibold"
+                  :class="teamFouls >= BONUS_AT ? 'bg-rim/20 text-rim' : 'text-ink-500'"
+                  :title="`Team fouls this ${activePeriod > 4 ? 'overtime (4th quarter counts carry over)' : 'quarter'}`"
+                >Fouls {{ teamFouls }}<template v-if="teamFouls >= BONUS_AT"> · BONUS</template></span>
+                <button
+                  v-for="p in PERIODS"
+                  :key="p.value"
+                  class="rounded px-2.5 py-1 text-xs font-bold transition"
+                  :class="activePeriod === p.value ? 'bg-rim text-white' : 'bg-ink-700 text-ink-500 hover:text-chalk'"
+                  @click="activePeriod = p.value"
+                >{{ p.label }}</button>
+                <button
+                  class="rounded px-2 py-1 text-xs font-bold text-ink-500 hover:text-chalk"
+                  title="Add another overtime" aria-label="Add another overtime"
+                  @click="addOvertime"
+                >+OT</button>
+                <button
+                  v-if="selectedPlayer && selectedHasEvents"
+                  class="ml-1 hidden rounded-lg bg-away p-1.5 text-white hover:bg-away/90 md:inline-flex"
+                  title="Undo last stat" aria-label="Undo last stat"
+                  @click="onUndo(selectedPlayerId!)"
+                ><ArrowUturnLeftIcon class="h-5 w-5" /></button>
+              </div>
+              <!-- Box score (tap a row to select the player) -->
+              <div class="card p-3">
+                <h2 class="mb-2 font-stencil font-bold">
+                  Box Score<span v-if="boxPeriod !== 'all'" class="ml-2 font-sans text-xs font-normal text-ink-500">{{ periodLabel(boxPeriod) }} only</span>
+                </h2>
+                <table class="w-full text-right font-mono text-sm">
+                  <thead class="text-ink-500">
+                    <tr class="border-b border-ink-700">
+                      <th class="py-1 text-left">Player</th>
+                      <th>PTS</th><th>FG</th><th>3P</th><th>FT</th>
+                      <th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th><th>PF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="r in shownBoxScore"
+                      :key="r.player_id"
+                      class="cursor-pointer border-b border-ink-800 transition"
+                      :class="selectedPlayerId === r.player_id
+                        ? 'bg-ink-700'
+                        : 'hover:bg-ink-800/70'"
+                      @click="selectedPlayerId = selectedPlayerId === r.player_id ? null : r.player_id"
+                    >
+                      <td class="py-2 text-left">
+                        <span
+                          class="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                          :class="playedIds.has(r.player_id) ? 'bg-green-400' : 'bg-transparent'"
+                          :title="playedIds.has(r.player_id) ? 'Has stats this game' : undefined"
+                        />
+                        <span class="font-mono text-xs text-ink-500">#{{ r.number ?? '—' }}</span>
+                        <span class="ml-1">{{ r.name }}</span>
+                      </td>
+                      <td class="font-bold text-chalk relative">{{ r.pts }}<StatFlash :items="flashesFor(r.player_id, 'pts')" /></td>
+                      <td class="relative">{{ r.fgm }}/{{ r.fga }}<StatFlash :items="flashesFor(r.player_id, 'fg')" /></td>
+                      <td class="relative">{{ r.tpm }}/{{ r.tpa }}<StatFlash :items="flashesFor(r.player_id, 'tp')" /></td>
+                      <td class="relative">{{ r.ftm }}/{{ r.fta }}<StatFlash :items="flashesFor(r.player_id, 'ft')" /></td>
+                      <td class="relative">{{ r.reb }}<StatFlash :items="flashesFor(r.player_id, 'reb')" /></td>
+                      <td class="relative">{{ r.ast }}<StatFlash :items="flashesFor(r.player_id, 'ast')" /></td>
+                      <td class="relative">{{ r.stl }}<StatFlash :items="flashesFor(r.player_id, 'stl')" /></td>
+                      <td class="relative">{{ r.blk }}<StatFlash :items="flashesFor(r.player_id, 'blk')" /></td>
+                      <td class="relative">{{ r.tov }}<StatFlash :items="flashesFor(r.player_id, 'tov')" /></td>
+                      <td class="relative" :class="boxPeriod === 'all' ? foulTone(r.player_id) : ''" :title="fouls.get(r.player_id) ? `${fouls.get(r.player_id)} fouls this game` : undefined">{{ r.pf }}<StatFlash :items="flashesFor(r.player_id, 'pf')" /></td>
+                    </tr>
+                  </tbody>
+                  <tfoot v-if="shownBoxScore.length" class="font-semibold text-chalk">
+                    <tr class="border-t border-ink-600">
+                      <td class="py-2 text-left">Team</td>
+                      <td>{{ boxScoreTotals.pts }}</td>
+                      <td :title="formatPct(boxScoreTotals.fgm, boxScoreTotals.fga)">{{ boxScoreTotals.fgm }}/{{ boxScoreTotals.fga }}</td>
+                      <td :title="formatPct(boxScoreTotals.tpm, boxScoreTotals.tpa)">{{ boxScoreTotals.tpm }}/{{ boxScoreTotals.tpa }}</td>
+                      <td :title="formatPct(boxScoreTotals.ftm, boxScoreTotals.fta)">{{ boxScoreTotals.ftm }}/{{ boxScoreTotals.fta }}</td>
+                      <td>{{ boxScoreTotals.reb }}</td><td>{{ boxScoreTotals.ast }}</td><td>{{ boxScoreTotals.stl }}</td>
+                      <td>{{ boxScoreTotals.blk }}</td><td>{{ boxScoreTotals.tov }}</td><td>{{ boxScoreTotals.pf }}</td>
+                    </tr>
+                    <tr class="text-xs font-normal text-ink-500">
+                      <td class="text-left">Shooting</td>
+                      <td></td>
+                      <td>{{ formatPct(boxScoreTotals.fgm, boxScoreTotals.fga) }}</td>
+                      <td>{{ formatPct(boxScoreTotals.tpm, boxScoreTotals.tpa) }}</td>
+                      <td>{{ formatPct(boxScoreTotals.ftm, boxScoreTotals.fta) }}</td>
+                      <td colspan="6"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
           </div>
         </div>

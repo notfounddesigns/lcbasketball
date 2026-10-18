@@ -60,7 +60,7 @@ watch(isAuthenticated, (now, was) => {
     <RouterView />
   </main>
   <!-- The tab bar navigates to gated routes, so it stays hidden on the login screen. -->
-  <AppNav v-if="isAuthenticated || isDev" />
+  <AppNav v-if="isAuthenticated" />
   <ConfirmDialog />
   <ToastHost />
 </template>

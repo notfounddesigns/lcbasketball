@@ -234,5 +234,5 @@ export function zoneFill(stat: ZoneStat, maxAtt: number): { color: string; opaci
   if (!stat.att) return { color: '#ffffff', opacity: 0.03 }
   const delta = stat.pct - TYPICAL_PCT[KIND.get(stat.id)!]
   const color = delta >= 8 ? HEAT_SCALE[3].color : delta >= 0 ? HEAT_SCALE[2].color : delta >= -8 ? HEAT_SCALE[1].color : HEAT_SCALE[0].color
-  return { color, opacity: 0.25 + 0.5 * Math.min(1, stat.att / Math.max(1, maxAtt)) }
+  return { color, opacity: 0.6 * Math.min(1, stat.att / Math.max(1, maxAtt)) }
 }
