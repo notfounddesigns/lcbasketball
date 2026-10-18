@@ -8,9 +8,9 @@ import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
 /* import icons and add them to the Library */
-import { faEraser, faPen, faUserPlus, faCommentDots, faRotateLeft, faTrashCan, faDownload } from '@fortawesome/free-solid-svg-icons'
+import { faEraser, faPen, faPenRuler, faUserPlus, faCommentDots, faRotateLeft, faTrashCan, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons'
 
-library.add(faEraser, faPen, faUserPlus, faCommentDots, faRotateLeft, faTrashCan, faDownload)
+library.add(faEraser, faPen, faPenRuler, faUserPlus, faCommentDots, faRotateLeft, faTrashCan, faDownload, faXmark)
 
 // iOS Safari has ignored `user-scalable=no` since iOS 10, so the viewport meta
 // alone will not stop a pinch. These WebKit-only gesture events are the
