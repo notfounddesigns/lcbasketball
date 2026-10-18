@@ -75,11 +75,12 @@ const containerSize = ref({ w: 0, h: 0 })
 // Height available to the court: the gap from the container's top edge down to
 // the fixed bottom nav. Driven by JS so the page never needs to scroll.
 const availableHeight = ref(0)
+const NAV_GAP = 8 // px between the court's bottom edge and the nav
 
 // Fill the room between the container's top edge (below the header/toolbar) and
-// the bottom of the viewport, minus the space reserved for the fixed nav. That
-// reserved space is the <main> element's bottom padding (pb-28), so accounting
-// for it keeps the page from scrolling. Falls back to the nav's own height.
+// the top of the fixed bottom nav. The nav is measured rather than assumed: its
+// height includes the iOS home-indicator inset (and the config banner, when
+// shown), so a fixed allowance leaves the court's bottom edge behind it on iPad.
 function measureAvailableHeight() {
   const el = containerRef.value
   if (!el || props.autoHeight) return
@@ -96,11 +97,9 @@ function measureAvailableHeight() {
       }
   } else {
     const top = el.getBoundingClientRect().top
-    const main = el.closest('main')
-    const reserved = main
-      ? parseFloat(getComputedStyle(main).paddingBottom) || 0
-      : (document.querySelector('nav.fixed')?.getBoundingClientRect().height ?? 0)
-    availableHeight.value = Math.max(0, window.innerHeight - top - reserved)
+    const nav = document.querySelector('nav.fixed')
+    const bottom = nav ? Math.min(nav.getBoundingClientRect().top, window.innerHeight) : window.innerHeight
+    availableHeight.value = Math.max(0, bottom - top - NAV_GAP)
   }
 }
 
