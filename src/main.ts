@@ -3,6 +3,14 @@ import App from '@/App.vue'
 import { router } from '@/router'
 import { supabase } from '@/lib/supabase'
 import '@/style.css'
+/* import the fontawesome core */
+import { library } from '@fortawesome/fontawesome-svg-core'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+
+/* import icons and add them to the Library */
+import { faEraser, faPen, faUserPlus, faCommentDots, faRotateLeft, faTrashCan, faDownload } from '@fortawesome/free-solid-svg-icons'
+
+library.add(faEraser, faPen, faUserPlus, faCommentDots, faRotateLeft, faTrashCan, faDownload)
 
 // iOS Safari has ignored `user-scalable=no` since iOS 10, so the viewport meta
 // alone will not stop a pinch. These WebKit-only gesture events are the
@@ -29,5 +37,5 @@ async function consumeAuthRedirect() {
 }
 
 consumeAuthRedirect().finally(() => {
-  createApp(App).use(router).mount('#app')
+  createApp(App).use(router).component('font-awesome-icon', FontAwesomeIcon).mount('#app')
 })

@@ -17,6 +17,7 @@ const canvasRef = ref<InstanceType<typeof CourtCanvas> | null>(null)
       ref="canvasRef"
       v-model="diagram"
       :total-phases="1"
+      tool="pen"
       editable
       @export-png="canvasRef?.exportPng('whiteboard.png')"
     />

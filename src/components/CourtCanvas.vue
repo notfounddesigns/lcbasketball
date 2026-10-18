@@ -10,8 +10,9 @@ import type {
   Point,
   TextElement,
 } from '@/types'
-import { ArrowUturnLeftIcon, BackspaceIcon, TrashIcon, ArrowDownTrayIcon, PlayIcon, PencilIcon, UserPlusIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/vue/24/outline';
+import { PlayIcon } from '@heroicons/vue/24/outline';
 import { useConfirm } from '@/composables/useConfirm'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 
 const { confirm } = useConfirm()
 
@@ -1082,12 +1083,6 @@ defineExpose({ exportPng })
     <!-- Left: whole-diagram actions. Right: drawing tools, which toggle — select
          mode is the default and tapping an active tool goes back to it. -->
     <div v-if="editable" class="flex flex-wrap items-center gap-1.5">
-      <button class="tb-btn" title="Clear phase" aria-label="Clear phase" @click="clearAll">
-        <TrashIcon class="h-5 w-5" />
-      </button>
-      <button class="tb-btn" title="Export PNG" aria-label="Export PNG" @click="emit('exportPng')">
-        <ArrowDownTrayIcon class="h-5 w-5" />
-      </button>
       <button v-if="totalPhases > 1" class="tb-btn" title="Preview animation" aria-label="Preview animation" @click="emit('isAnimating', true)">
         <PlayIcon class="h-5 w-5" />
       </button>
@@ -1121,19 +1116,25 @@ defineExpose({ exportPng })
 
       <div class="ml-auto flex items-center gap-1.5">
         <button class="tb-btn" :class="{ 'tb-on': tool === 'pen' }" title="Draw" aria-label="Draw" :aria-pressed="tool === 'pen'" @click="toggleTool('pen')">
-          <PencilIcon class="h-5 w-5" />
+          <font-awesome-icon icon="fa-solid fa-pen" class="h-5 w-5" />
         </button>
         <button class="tb-btn" :class="{ 'tb-on': tool === 'marker' }" title="Add player" aria-label="Add player" :aria-pressed="tool === 'marker'" @click="toggleTool('marker')">
-          <UserPlusIcon class="h-5 w-5" />
+          <font-awesome-icon icon="fa-solid fa-user-plus" class="h-5 w-5" />
         </button>
         <button class="tb-btn" :class="{ 'tb-on': tool === 'text' }" title="Add text" aria-label="Add text" :aria-pressed="tool === 'text'" @click="toggleTool('text')">
-          <ChatBubbleBottomCenterTextIcon class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" title="Undo" aria-label="Undo" :disabled="!elements.length" @click="undo">
-          <ArrowUturnLeftIcon class="h-5 w-5" />
+          <font-awesome-icon icon="fa-solid fa-comment-dots" class="h-5 w-5" />
         </button>
         <button class="tb-btn" :class="{ 'tb-on': tool === 'erase' }" title="Eraser" aria-label="Eraser" :aria-pressed="tool === 'erase'" @click="toggleTool('erase')">
-          <BackspaceIcon class="h-5 w-5" />
+          <font-awesome-icon icon="fa-solid fa-eraser" class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" title="Undo" aria-label="Undo" :disabled="!elements.length" @click="undo">
+          <font-awesome-icon icon="fa-solid fa-rotate-left" class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" title="Clear phase" aria-label="Clear phase" @click="clearAll">
+          <font-awesome-icon icon="fa-solid fa-trash-can" class="h-5 w-5" />
+        </button>
+        <button class="tb-btn" title="Export PNG" aria-label="Export PNG" @click="emit('exportPng')">
+          <font-awesome-icon icon="fa-solid fa-download" class="h-5 w-5" />
         </button>
       </div>
     </div>
