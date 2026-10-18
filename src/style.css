@@ -116,35 +116,52 @@ input[type='number']::-webkit-inner-spin-button {
 }
 
 /* The live tracker fills the screen under the sticky game header. */
-.boxscore-shotchart-container,
-.stat-column {
+.tracker {
   /* --tracker-top is measured (the game header can wrap to two lines);
      the tab bar (62px + safe area) is below. */
-  height: calc(100dvh - var(--tracker-top, 128px) - 70px - env(safe-area-inset-bottom, 0px));
+  --tracker-h: calc(100dvh - var(--tracker-top, 128px) - 70px - env(safe-area-inset-bottom, 0px));
+  height: var(--tracker-h);
+  overflow-y: auto;
+  /* Round stat buttons: nine of them, plus the Roster button, the gaps and
+     the folded box-score bar, fill the column's height. */
+  --stat-btn: clamp(2.75rem, calc((var(--tracker-h) - 10.5rem) / 9), 6.5rem);
+}
+
+.stat-column {
+  width: var(--stat-btn);
+}
+.stat-btn {
+  width: var(--stat-btn);
+  height: var(--stat-btn);
 }
 
 /* Phones: the fixed stat pad covers the bottom of the panel, so let the box
    score scroll clear of it. */
 @media (max-width: 767px) {
-  .boxscore-shotchart-container {
+  .tracker {
     padding-bottom: 15rem;
   }
 }
 
 /* Stats tracker sizing.
    Phones: the panel scrolls; the court is as wide as the screen at its true
-   aspect ratio. Tablet+: the box score takes only the height it needs (capped)
-   and the shot chart fills whatever is left, so the court is as big as the
-   screen allows instead of a fixed half. */
+   aspect ratio. Tablet+: the box score folds to a bar (or takes only the
+   height it needs, capped, when open) and the court fills whatever is left,
+   so it is as big as the screen allows. */
 .shotchart {
   width: 100%;
   aspect-ratio: 500 / 470;
 }
 
 @media (min-width: 768px) {
+  .tracker {
+    overflow-y: hidden;
+  }
   .boxscore {
     flex-shrink: 0;
-    max-height: 42%;
+  }
+  .boxscore-open {
+    max-height: 45%;
   }
   .shotchart-container {
     flex: 1 1 0;
@@ -157,16 +174,6 @@ input[type='number']::-webkit-inner-spin-button {
   .shotchart {
     height: 100%;
     aspect-ratio: auto;
-  }
-}
-
-@media (min-width: 1024px) {
-  .boxscore {
-    max-height: 100%;
-    height: fit-content;
-  }
-  .shotchart-container {
-    height: 100%;
   }
 }
 
