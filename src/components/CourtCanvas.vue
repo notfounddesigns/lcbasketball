@@ -467,8 +467,8 @@ function onSelectUp() {
     if (original) openPlayerMenu(original)
   } else if (dragKind.value && live) {
     let next: DiagramElement = live
-    // A pass end dropped on a player ties to that player again.
-    if (live.type === 'arrow' && live.style === 'pass') {
+    // An arrow end dropped on a player ties to that player.
+    if (live.type === 'arrow') {
       if (dragKind.value === 'arrow-tail') next = { ...live, fromId: markerAt(live.points[0], live.toId)?.id }
       if (dragKind.value === 'arrow-head') next = { ...live, toId: markerAt(live.points[1], live.fromId)?.id }
     }
@@ -489,18 +489,19 @@ function onDrawDown(e: PointerEvent) {
       tool.value = 'select'
       return
     }
-    // Passing: tapping the receiver draws the pass between the two players.
-    const receiver = arrowStyle.value === 'pass' ? markerAt(p, from.id) : null
-    if (receiver) {
+    // Tapping another player draws the move between the two (a pass to the
+    // receiver, a screen on the screened player, …).
+    const target = markerAt(p, from.id)
+    if (target) {
       finishRoute(resolveArrow({
         id: crypto.randomUUID(),
         type: 'arrow',
         color: color.value,
         width: strokeWidth.value,
-        points: [from.at, receiver.at],
-        style: 'pass',
+        points: [from.at, target.at],
+        style: arrowStyle.value,
         fromId: from.id,
-        toId: receiver.id,
+        toId: target.id,
       }, elements.value))
       return
     }
@@ -636,12 +637,13 @@ function onDrawMove(e: PointerEvent) {
     // A route keeps its tail on the player's edge, facing the drag.
     const from = tool.value === 'route' ? routeMarker() : null
     drawing.value.points = [from ? routeTail(from.at, p) : drawing.value.points[0], p]
-    // A pass dragged onto a teammate snaps to them, tied at both ends.
-    if (from && drawing.value.style === 'pass') {
-      const receiver = markerAt(p, from.id)
+    // The route stays tied to its player, and snaps to another player it's
+    // dragged onto.
+    if (from) {
+      const target = markerAt(p, from.id)
       drawing.value.fromId = from.id
-      drawing.value.toId = receiver?.id
-      if (receiver) drawing.value.points = resolveArrow(drawing.value, elements.value).points
+      drawing.value.toId = target?.id
+      if (target) drawing.value.points = resolveArrow(drawing.value, elements.value).points
     }
   }
 }
@@ -692,8 +694,10 @@ function edgePoint(center: Point, p: Point, gap: number): Point {
 }
 
 // The arrowhead is centred on the line's end and its tip pokes ~10 units past
-// it, so a pass's head stops this far out for the tip to meet the circle.
+// it, so a tied head stops this far out for the tip to meet the circle; a
+// screen's bar sits right at the end, just outside the circle.
 const HEAD_GAP = MARKER_R + 14
+const SCREEN_GAP = MARKER_R + 6
 
 // The player marker under p, if any (other than `exceptId`).
 function markerAt(p: Point, exceptId?: string): MarkerElement | null {
@@ -702,7 +706,7 @@ function markerAt(p: Point, exceptId?: string): MarkerElement | null {
   ) ?? null
 }
 
-// A pass tied to players gets its ends from where those players stand now,
+// A route tied to players gets its ends from where those players stand now,
 // each on the edge of the circle facing the other end (or the curve's bend).
 function resolveArrow(el: ArrowElement, list: DiagramElement[]): ArrowElement {
   if (!el.fromId && !el.toId) return el
@@ -717,12 +721,12 @@ function resolveArrow(el: ArrowElement, list: DiagramElement[]): ArrowElement {
     ...el,
     points: [
       from ? edgePoint(a, el.control ?? b, MARKER_R + 4) : el.points[0],
-      to ? edgePoint(b, el.control ?? a, HEAD_GAP) : el.points[1],
+      to ? edgePoint(b, el.control ?? a, el.style === 'screen' ? SCREEN_GAP : HEAD_GAP) : el.points[1],
     ],
   }
 }
 
-// Re-seat every tied pass on its players (after a player moved).
+// Re-seat every tied route on its players (after a player moved).
 function syncAttached(list: DiagramElement[]): DiagramElement[] {
   return list.map((el) => (el.type === 'arrow' ? resolveArrow(el, list) : el))
 }
@@ -800,6 +804,13 @@ function toggleTool(t: Tool) {
 const drawCursor = computed(() => tool.value === 'pen' || tool.value === 'arrow' || tool.value === 'route')
 
 const routeLabel = computed(() => ROUTES.find((r) => r.style === arrowStyle.value)?.label ?? 'Move')
+
+// Passes and screens usually end on a teammate; cuts and dribbles on a spot.
+const routeHint = computed(() => {
+  if (arrowStyle.value === 'pass') return 'Tap the player receiving the pass, or drag to a spot'
+  if (arrowStyle.value === 'screen') return 'Tap the player to screen, or drag to a spot'
+  return `Drag to where the ${routeLabel.value.toLowerCase()} ends, or tap a player`
+})
 
 // ---------- double-tap / double-click suppression ----------
 // Drawing a dashed pass line means several short strokes in quick succession in
@@ -1098,7 +1109,7 @@ function screenBar(el: ArrowElement): { x1: number; y1: number; x2: number; y2: 
 }
 
 // All elements to render, substituting live drag copy when dragging; tied
-// passes follow a player being dragged (or turn with a bend being dragged).
+// routes follow a player being dragged (or turn with a bend being dragged).
 const allElements = computed<DiagramElement[]>(() => {
   const base = drawing.value ? [...elements.value, drawing.value] : [...elements.value]
   if (!dragLive.value) return base
@@ -1495,8 +1506,7 @@ defineExpose({ exportPng })
         class="pointer-events-auto absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink-900/90 px-3 py-1.5 text-xs text-chalk shadow-lg"
         @pointerdown.stop
       >
-        <template v-if="arrowStyle === 'pass'">Tap the player receiving the pass, or drag to a spot</template>
-        <template v-else>Drag from the player to where the {{ routeLabel.toLowerCase() }} ends</template>
+        {{ routeHint }}
         <button class="text-ink-400 hover:text-chalk" @click="tool = 'select'">Cancel</button>
       </div>
 
