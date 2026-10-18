@@ -901,16 +901,17 @@ watch(
           <div class="tracker-main flex gap-3 md:min-h-0 md:flex-1">
 
             <!-- Stat buttons (tablet/desktop; phones get the bottom stat pad) -->
-            <div class="stat-column no-scrollbar hidden shrink-0 flex-col items-center gap-2 overflow-y-auto md:flex">
-              <button
+            <!-- <div class="stat-column no-scrollbar hidden shrink-0 flex-col border-r border-r-slate-700 items-center gap-2 px-2 overflow-y-auto md:flex"> -->
+              <div class="no-scrollbar hidden w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto py-1 md:flex" role="group" aria-label="Players"">
+              <!-- <button
                 class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-ink-700 bg-ink-800 py-1 text-xs text-gray-300 hover:text-chalk"
                 @click="showRosterDrawer = true">
                 <UserGroupIcon class="h-4 w-4" />Roster
-              </button>
+              </button> -->
               <button
                 v-for="b in [...FT_STATS, ...ACTION_STATS]"
                 :key="b.stat"
-                class="stat-btn shrink-0 rounded-full px-1 text-xs font-bold leading-tight transition"
+                class="h-12 w-12 shrink-0 rounded-full px-1 text-xs font-bold leading-tight transition"
                 :class="[b.tone, selectedPlayerId ? 'hover:brightness-125 active:scale-95' : 'cursor-default opacity-50']"
                 :disabled="!selectedPlayerId"
                 @click="tap(b.stat)"
