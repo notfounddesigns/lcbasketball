@@ -12,7 +12,7 @@ import type {
 } from '@/types'
 import { PlayIcon } from '@heroicons/vue/24/outline';
 import { useConfirm } from '@/composables/useConfirm'
-import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import ToolSpeedDial from '@/components/ToolSpeedDial.vue'
 
 const { confirm } = useConfirm()
 
@@ -656,17 +656,37 @@ function routeTail(center: Point, p: Point): Point {
   return { x: center.x + (dx * off) / W.value, y: center.y + (dy * off) / H.value }
 }
 
-function openPlayerMenu(m: MarkerElement) {
+const playerMenuRef = ref<HTMLElement | null>(null)
+const MENU_GAP = 24 // px between the player and the menu's near edge
+const MENU_PAD = 8 // px the menu keeps from the court container's edges
+
+async function openPlayerMenu(m: MarkerElement) {
   const svg = svgRef.value
   const container = containerRef.value
   if (!svg || !container) return
   const s = svg.getBoundingClientRect()
   const c = container.getBoundingClientRect()
+  const x = s.left - c.left + m.at.x * s.width
+  const y = s.top - c.top + m.at.y * s.height
   selectedId.value = m.id
+  playerMenu.value = { id: m.id, left: x + MENU_GAP, top: y }
+
+  // Measure the rendered menu, then keep it inside the court: it opens to the
+  // player's right, flips to the left when that would run off the edge (narrow
+  // screens), and is clamped vertically so it never hangs over the top/bottom.
+  await nextTick()
+  const menu = playerMenuRef.value
+  if (!menu || playerMenu.value?.id !== m.id) return
+  const w = menu.offsetWidth
+  const h = menu.offsetHeight
+  const maxLeft = c.width - w - MENU_PAD
+  const maxTop = c.height - h - MENU_PAD
+  let left = x + MENU_GAP
+  if (left > maxLeft) left = x - MENU_GAP - w
   playerMenu.value = {
     id: m.id,
-    left: s.left - c.left + m.at.x * s.width,
-    top: s.top - c.top + m.at.y * s.height,
+    left: Math.max(MENU_PAD, Math.min(left, maxLeft)),
+    top: Math.max(MENU_PAD, Math.min(y - h / 2, maxTop)),
   }
 }
 
@@ -1080,8 +1100,7 @@ defineExpose({ exportPng })
 <template>
   <div :class="editable ? 'flex flex-col gap-2' : ''">
     <!-- ── TOOLBAR (editable only) ── -->
-    <!-- Left: whole-diagram actions. Right: drawing tools, which toggle — select
-         mode is the default and tapping an active tool goes back to it. -->
+    <!-- Whole-diagram setup. The drawing tools live in the speed dial on the court. -->
     <div v-if="editable" class="flex flex-wrap items-center gap-1.5">
       <button v-if="totalPhases > 1" class="tb-btn" title="Preview animation" aria-label="Preview animation" @click="emit('isAnimating', true)">
         <PlayIcon class="h-5 w-5" />
@@ -1114,29 +1133,6 @@ defineExpose({ exportPng })
         <input v-model="markerLabel" maxlength="2" class="input h-[38px] !w-14 py-1.5 text-center text-xs" aria-label="Marker label" />
       </template>
 
-      <div class="ml-auto flex items-center gap-1.5">
-        <button class="tb-btn" :class="{ 'tb-on': tool === 'pen' }" title="Draw" aria-label="Draw" :aria-pressed="tool === 'pen'" @click="toggleTool('pen')">
-          <font-awesome-icon icon="fa-solid fa-pen" class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" :class="{ 'tb-on': tool === 'marker' }" title="Add player" aria-label="Add player" :aria-pressed="tool === 'marker'" @click="toggleTool('marker')">
-          <font-awesome-icon icon="fa-solid fa-user-plus" class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" :class="{ 'tb-on': tool === 'text' }" title="Add text" aria-label="Add text" :aria-pressed="tool === 'text'" @click="toggleTool('text')">
-          <font-awesome-icon icon="fa-solid fa-comment-dots" class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" :class="{ 'tb-on': tool === 'erase' }" title="Eraser" aria-label="Eraser" :aria-pressed="tool === 'erase'" @click="toggleTool('erase')">
-          <font-awesome-icon icon="fa-solid fa-eraser" class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" title="Undo" aria-label="Undo" :disabled="!elements.length" @click="undo">
-          <font-awesome-icon icon="fa-solid fa-rotate-left" class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" title="Clear phase" aria-label="Clear phase" @click="clearAll">
-          <font-awesome-icon icon="fa-solid fa-trash-can" class="h-5 w-5" />
-        </button>
-        <button class="tb-btn" title="Export PNG" aria-label="Export PNG" @click="emit('exportPng')">
-          <font-awesome-icon icon="fa-solid fa-download" class="h-5 w-5" />
-        </button>
-      </div>
     </div>
 
     <!-- ── COURT ── -->
@@ -1371,10 +1367,22 @@ defineExpose({ exportPng })
         />
       </svg>
 
+      <!-- drawing tools; they toggle, so tapping the active one returns to select -->
+      <ToolSpeedDial
+        v-if="editable"
+        :active="tool"
+        :can-undo="elements.length > 0"
+        @toggle="toggleTool"
+        @undo="undo"
+        @clear="clearAll"
+        @export="emit('exportPng')"
+      />
+
       <!-- move menu for a tapped player -->
       <div
         v-if="playerMenu"
-        class="absolute z-10 flex translate-x-6 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-ink-600 bg-ink-900/95 text-sm text-chalk shadow-2xl backdrop-blur"
+        ref="playerMenuRef"
+        class="absolute z-10 flex flex-col overflow-hidden rounded-xl border border-ink-600 bg-ink-900/95 text-sm text-chalk shadow-2xl backdrop-blur"
         :style="{ left: `${playerMenu.left}px`, top: `${playerMenu.top}px` }"
         role="menu"
         @pointerdown.stop
