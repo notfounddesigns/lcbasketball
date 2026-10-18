@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="rootRef" class="absolute bottom-10 right-3 z-20" @pointerdown.stop>
+  <div ref="rootRef" class="absolute bottom-3 right-3 z-20" @pointerdown.stop>
     <!-- drawing tools: fan out above the main button -->
     <div
       class="absolute bottom-full right-[3px] mb-2 flex flex-col-reverse gap-2 transition duration-150"
