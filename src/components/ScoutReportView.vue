@@ -46,7 +46,7 @@ const hasNotes = computed(() => NOTES.some((n) => props.game[n.key]))
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 pb-24">
+  <div class="flex flex-col gap-4 pb-24 overflow-y-auto" style="height: calc(100dvh - 165px);">
     <!-- Matchup header -->
     <div class="flex flex-wrap items-center gap-3">
       <button class="inline-flex items-center gap-1 py-1.5" @click="$emit('back')">
