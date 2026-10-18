@@ -160,8 +160,19 @@ input[type='number']::-webkit-inner-spin-button {
   .boxscore {
     flex-shrink: 0;
   }
-  .boxscore-open {
-    max-height: 45%;
+  /* The open box score rises over the court from its bar instead of taking
+     height from it. */
+  .boxscore-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 0.5rem);
+    max-height: calc(var(--tracker-h) - 4.5rem);
+    padding-top: 0.75rem;
+    border-radius: 1rem;
+    border: 1px solid theme('colors.ink.700');
+    background: theme('colors.ink.800');
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.6);
   }
   .shotchart-container {
     flex: 1 1 0;

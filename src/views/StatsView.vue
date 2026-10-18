@@ -429,27 +429,18 @@ const shownBoxScore = computed(() => {
   return buildBoxScore(rosterFor(events.value), inPeriod)
 })
 
-// The box score folds away under the court so the court gets the screen while
-// tracking. Phones pick players from the box score, so it starts open there.
-const BOX_OPEN_KEY = 'lcbb-box-open'
-function readBoxOpen(): boolean {
-  try {
-    const saved = localStorage.getItem(BOX_OPEN_KEY)
-    if (saved != null) return saved === '1'
-  } catch {
-    // Storage can be unavailable (private mode); fall back to the default.
-  }
-  return !window.matchMedia('(min-width: 768px)').matches
-}
-const boxOpen = ref(readBoxOpen())
+// The box score folds into a bar under the court. On tablets and up it opens
+// as an overlay over the court, closed by tapping outside it or Escape;
+// phones pick players from the box score, so there it sits open in the page.
+const boxOpen = ref(!window.matchMedia('(min-width: 768px)').matches)
 function toggleBox() {
   boxOpen.value = !boxOpen.value
-  try {
-    localStorage.setItem(BOX_OPEN_KEY, boxOpen.value ? '1' : '0')
-  } catch {
-    // Remembering the choice is a convenience.
-  }
 }
+function onBoxKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && boxOpen.value && window.matchMedia('(min-width: 768px)').matches) boxOpen.value = false
+}
+window.addEventListener('keydown', onBoxKeydown)
+onBeforeUnmount(() => window.removeEventListener('keydown', onBoxKeydown))
 
 // Player bubbles on the tracker's right rail show initials ("Kevin Jones" → KJ).
 function initials(name: string) {
@@ -902,7 +893,7 @@ watch(
 
             <!-- Stat buttons (tablet/desktop; phones get the bottom stat pad) -->
             <!-- <div class="stat-column no-scrollbar hidden shrink-0 flex-col border-r border-r-slate-700 items-center gap-2 px-2 overflow-y-auto md:flex"> -->
-              <div class="no-scrollbar hidden w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto py-1 md:flex" role="group" aria-label="Players"">
+              <div class="no-scrollbar hidden w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto py-1 md:flex" role="group" aria-label="Stat buttons">
               <!-- <button
                 class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-ink-700 bg-ink-800 py-1 text-xs text-gray-300 hover:text-chalk"
                 @click="showRosterDrawer = true">
@@ -966,8 +957,15 @@ watch(
             </div>
           </div>
 
-          <!-- Box score: folds into a bar under the court (tap a row to select the player) -->
-          <div class="boxscore card flex min-w-0 flex-col" :class="boxOpen ? 'boxscore-open' : ''">
+          <!-- Tablet+: tapping outside the open box score closes it -->
+          <div
+            v-if="boxOpen"
+            class="fixed inset-0 z-20 hidden bg-black/50 backdrop-blur-[2px] md:block"
+            aria-hidden="true"
+            @click="boxOpen = false"
+          />
+          <!-- Box score: folds into a bar under the court and opens over it (tap a row to select the player) -->
+          <div class="boxscore card relative flex min-w-0 flex-col md:z-[25]">
             <div class="flex shrink-0 cursor-pointer items-center gap-2 px-3 py-2" @click="toggleBox">
               <h2 class="shrink-0 whitespace-nowrap font-stencil text-lg font-bold">
                 Box Score<span v-if="boxPeriod !== 'all'" class="ml-2 font-sans text-xs font-normal text-ink-500">{{ periodLabel(boxPeriod) }} only</span>
@@ -1001,7 +999,7 @@ watch(
                 @click.stop="toggleBox"
               ><ChevronUpIcon class="h-6 w-6 transition-transform" :class="boxOpen ? 'rotate-180' : ''" /></button>
             </div>
-            <div v-if="boxOpen" class="min-h-0 overflow-auto px-3 pb-3">
+            <div v-if="boxOpen" class="boxscore-panel min-h-0 overflow-auto px-3 pb-3">
               <table class="w-full text-right font-mono text-sm">
                 <thead class="text-ink-500">
                   <tr class="border-b border-ink-700">
