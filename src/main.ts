@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import App from '@/App.vue'
 import { router } from '@/router'
+import type { RouteLocationRaw } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import '@/style.css'
 /* import the fontawesome core */
@@ -23,19 +24,20 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
 // Invite and password-reset emails land on `/#access_token=…&type=invite`.
 // That hash would be read as a route by the hash router, so let supabase-js
 // pick up the session from it first, then send the user to set a password.
-async function consumeAuthRedirect() {
+// The router already exists by now (and has cached the token hash as its
+// location), so the redirect has to go through it rather than history.
+async function consumeAuthRedirect(): Promise<RouteLocationRaw | null> {
   const params = new URLSearchParams(location.hash.replace(/^#\/?/, ''))
-  const base = location.pathname + location.search
-  if (params.get('error_description')) {
-    history.replaceState(null, '', `${base}#/login?auth_error=${encodeURIComponent(params.get('error_description')!)}`)
-    return
-  }
-  if (!params.get('access_token')) return
+  const error = params.get('error_description')
+  if (error) return { name: 'login', query: { auth_error: error } }
+  if (!params.get('access_token')) return null
   await supabase.auth.getSession() // resolves once the URL session is stored
   const type = params.get('type')
-  history.replaceState(null, '', `${base}#/${type === 'invite' || type === 'recovery' ? 'set-password' : ''}`)
+  return type === 'invite' || type === 'recovery' ? { name: 'set-password' } : '/'
 }
 
-consumeAuthRedirect().finally(() => {
-  createApp(App).use(router).component('font-awesome-icon', FontAwesomeIcon).mount('#app')
-})
+consumeAuthRedirect()
+  .then((target) => (target ? router.replace(target) : undefined))
+  .finally(() => {
+    createApp(App).use(router).component('font-awesome-icon', FontAwesomeIcon).mount('#app')
+  })
