@@ -24,6 +24,16 @@ function reply(status: number, body: Record<string, unknown>) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return reply(405, { error: 'POST only' })
+  try {
+    return await handle(req)
+  } catch (e) {
+    // Always answer JSON so the app can show what went wrong.
+    console.error(e)
+    return reply(500, { error: `Invite failed: ${e instanceof Error ? e.message : String(e)}` })
+  }
+})
+
+async function handle(req: Request) {
 
   const url = Deno.env.get('SUPABASE_URL')!
   const anon = Deno.env.get('SUPABASE_ANON_KEY')!
@@ -82,4 +92,4 @@ Deno.serve(async (req) => {
   }
 
   return reply(200, { user_id: invited.user.id })
-})
+}

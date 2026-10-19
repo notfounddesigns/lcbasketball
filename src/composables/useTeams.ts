@@ -131,15 +131,29 @@ export function useTeams() {
     })
     if (err) {
       // The function's own message (bad email, not allowed…) is in the body.
+      // Supabase's gateway answers with `message`/`msg` instead of `error`
+      // (function not deployed, JWT rejected, function crashed).
+      const res = (err as { context?: Response }).context
+      const status = res instanceof Response ? res.status : 0
       let message = err.message
       try {
-        const body = await (err as { context?: Response }).context?.json()
-        if (body?.error) message = body.error
+        const body = await res?.clone().json()
+        const text = body?.error ?? body?.message ?? body?.msg
+        if (typeof text === 'string' && text) message = text
       } catch {
-        // Not JSON (e.g. the function isn't deployed): keep the generic message.
+        try {
+          const text = (await res?.text())?.trim()
+          if (text) message = text.slice(0, 200)
+        } catch {
+          // No body at all: keep the generic message.
+        }
       }
-      if (/not found|failed to send|fetch/i.test(message)) {
+      if (status === 404 || /requested function was not found|failed to send|fetch/i.test(message)) {
         message = 'The invite service isn\'t set up yet — deploy the invite-user Edge Function (see README).'
+      } else if (status === 401 && /jwt/i.test(message)) {
+        message = `The invite service rejected your sign-in (${message}). Sign out and back in; if it persists, redeploy invite-user with --no-verify-jwt (see README).`
+      } else if (status && message === err.message) {
+        message = `${message} (HTTP ${status})`
       }
       return fail(message)
     }
