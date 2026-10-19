@@ -162,6 +162,10 @@ teams, rosters and people.
    `update public.profiles set role = 'admin' where email = 'you@example.com';`
 3. Deploy the invite function (needs the [Supabase CLI](https://supabase.com/docs/guides/cli)):
    `supabase functions deploy invite-user --project-ref <your-project-ref>`
+   If invites fail with "Invalid JWT" (projects on the newer JWT signing
+   keys), redeploy with `--no-verify-jwt`; the function checks the caller's
+   sign-in itself. Invite failures are logged under **Edge Functions →
+   invite-user → Logs** in the dashboard.
 4. In **Authentication → URL Configuration**, add the site's URL (e.g.
    `https://www.lcbasketball.com/`) to **Redirect URLs** so invite and reset
    links can return to the app. Keep public sign-ups off.
