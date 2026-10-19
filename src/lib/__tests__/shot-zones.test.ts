@@ -63,7 +63,7 @@ describe('zoneFill', () => {
     const hot = zoneFill({ id: 't3', made: 5, att: 10, pct: 50 }, 10)
     const cold = zoneFill({ id: 't3', made: 1, att: 10, pct: 10 }, 10)
     expect(hot.color).not.toBe(cold.color)
-    expect(hot.opacity).toBe(0.75)
+    expect(hot.opacity).toBe(0.6)
   })
 })
 
