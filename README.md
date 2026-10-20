@@ -169,12 +169,39 @@ teams, rosters and people.
 4. In **Authentication → URL Configuration**, add the site's URL (e.g.
    `https://www.lcbasketball.com/`) to **Redirect URLs** so invite and reset
    links can return to the app. Keep public sign-ups off.
+5. Send invite and reset emails through [Resend](https://resend.com):
+   1. In Resend, verify the sending domain and create two templates — one for
+      invites, one for password resets. Each gets these variables:
+      `ACTION_URL` (the sign-in link; use it as the button's href),
+      `EMAIL`, `DISPLAY_NAME` and `ROLE` (the last two may be blank). Set the
+      subject and sender in the template, and publish it.
+   2. Deploy the hook: `supabase functions deploy send-email --no-verify-jwt --project-ref <your-project-ref>`
+      (it checks the hook's signature itself).
+   3. In **Authentication → Hooks**, add a **Send Email** hook of type HTTPS
+      pointing at `https://<your-project-ref>.supabase.co/functions/v1/send-email`
+      and generate its secret.
+   4. Set the function's secrets:
+      ```sh
+      supabase secrets set --project-ref <your-project-ref> \
+        SEND_EMAIL_HOOK_SECRET='v1,whsec_…' \
+        RESEND_API_KEY=re_… \
+        RESEND_INVITE_TEMPLATE=<invite template id or alias> \
+        RESEND_RECOVERY_TEMPLATE=<reset template id or alias>
+      ```
+      Add `RESEND_FROM='LC Basketball <noreply@your-domain>'` if the
+      templates don't set a sender.
+
+   Once the hook is on, Supabase sends no auth email itself. Failures are
+   logged under **Edge Functions → send-email → Logs**, and the reason shows
+   in the invite dialog.
 
 **Invites and passwords.** Admins invite people from Account → People; coaches
 invite a roster player's login from the envelope icon. The `invite-user` Edge
-Function checks the caller's role, then sends Supabase's invite email. The
+Function checks the caller's role, then has Supabase send the invite, which the
+`send-email` hook delivers through Resend. The
 link signs the person in and opens **Choose your password**. "Forgot
-password?" on the login screen sends a reset link that lands on the same page.
+password?" on the login screen sends a reset link (also via Resend) that lands
+on the same page.
 
 ## Remaining gaps
 
