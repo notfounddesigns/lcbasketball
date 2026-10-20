@@ -26,7 +26,8 @@ export const router = createRouter({
     { path: '/practice-plans/:id/print', name: 'practice-plan-print', component: PrintPracticePlanView },
     { path: '/whiteboard', name: 'whiteboard', component: WhiteboardView },
     { path: '/account', name: 'account', component: AccountView },
-    { path: '/set-password', name: 'set-password', component: SetPasswordView },
+    // No tab bar until the password is set: the invitee isn't in the app yet.
+    { path: '/set-password', name: 'set-password', component: SetPasswordView, meta: { hideNav: true } },
   ],
 })
 

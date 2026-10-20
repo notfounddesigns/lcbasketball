@@ -170,11 +170,12 @@ teams, rosters and people.
    `https://www.lcbasketball.com/`) to **Redirect URLs** so invite and reset
    links can return to the app. Keep public sign-ups off.
 5. Send invite and reset emails through [Resend](https://resend.com):
-   1. In Resend, verify the sending domain and create two templates — one for
-      invites, one for password resets. Each gets these variables:
+   1. In Resend, verify the sending domain and create one template, used for
+      both invites and password resets. It gets these variables:
       `ACTION_URL` (the sign-in link; use it as the button's href),
-      `EMAIL`, `DISPLAY_NAME` and `ROLE` (the last two may be blank). Set the
-      subject and sender in the template, and publish it.
+      `SUBJECT`, `HEADING`, `MESSAGE` and `BUTTON_TEXT` (worded for an invite
+      or a reset), and `EMAIL`, `DISPLAY_NAME` and `ROLE` (display name may be
+      blank). Use `{{{SUBJECT}}}` as the subject, set the sender, and publish it.
    2. Deploy the hook: `supabase functions deploy send-email --no-verify-jwt --project-ref <your-project-ref>`
       (it checks the hook's signature itself).
    3. In **Authentication → Hooks**, add a **Send Email** hook of type HTTPS
@@ -185,13 +186,16 @@ teams, rosters and people.
       supabase secrets set --project-ref <your-project-ref> \
         SEND_EMAIL_HOOK_SECRET='v1,whsec_…' \
         RESEND_API_KEY=re_… \
-        RESEND_INVITE_TEMPLATE=<invite template id or alias> \
-        RESEND_RECOVERY_TEMPLATE=<reset template id or alias>
+        RESEND_TEMPLATE=<template id or alias>
       ```
       Add `RESEND_FROM='LC Basketball <noreply@your-domain>'` if the
-      templates don't set a sender.
+      template doesn't set a sender.
 
-   Once the hook is on, Supabase sends no auth email itself. Failures are
+   Once the hook is on, Supabase sends no auth email itself: invites from
+   Account → People, a coach's player invites, "Forgot password?" and invites
+   from the Supabase dashboard all go through Resend. Someone invited from the
+   dashboard (Authentication → Users) becomes a coach; run the "accounts
+   created in the Supabase dashboard are coaches" migration for that. Failures are
    logged under **Edge Functions → send-email → Logs**, and the reason shows
    in the invite dialog.
 

@@ -742,3 +742,26 @@ returns boolean language sql stable security definer set search_path = public as
   select public.can_edit_player(p) from public.players p where p.id = pid;
 $$;
 grant execute on function public.can_edit_player_id(uuid) to authenticated;
+
+-- ============================================================
+-- Migration: accounts created in the Supabase dashboard are coaches
+-- Apply in: Supabase Dashboard → SQL Editor → New query → Run
+-- ============================================================
+
+-- The invite-user Edge Function always puts a role in the new user's
+-- metadata. A user invited or added from Authentication → Users has none;
+-- only someone with dashboard access can do that, so make them a coach.
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, email, display_name, role)
+  values (
+    new.id,
+    lower(coalesce(new.email, '')),
+    nullif(new.raw_user_meta_data ->> 'display_name', ''),
+    coalesce(nullif(new.raw_user_meta_data ->> 'role', ''), 'coach')
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
