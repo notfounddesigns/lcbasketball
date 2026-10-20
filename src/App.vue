@@ -59,8 +59,9 @@ watch(isAuthenticated, (now, was) => {
   <main class="h-[calc(100dvh-62px)] mx-auto max-w-screen-xl px-4 pb-16 pt-4">
     <RouterView />
   </main>
-  <!-- The tab bar navigates to gated routes, so it stays hidden on the login screen. -->
-  <AppNav v-if="isAuthenticated" />
+  <!-- The tab bar navigates to gated routes, so it stays hidden on the login
+       screen, and on Choose your password until the invitee has one. -->
+  <AppNav v-if="isAuthenticated && !route.meta.hideNav" />
   <ConfirmDialog />
   <ToastHost />
 </template>

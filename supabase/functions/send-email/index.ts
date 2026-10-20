@@ -10,12 +10,13 @@
 // Secrets (supabase secrets set …):
 //   SEND_EMAIL_HOOK_SECRET    the hook secret, as shown ("v1,whsec_…")
 //   RESEND_API_KEY            Resend API key with sending access
-//   RESEND_INVITE_TEMPLATE    Resend template id or alias for invites
-//   RESEND_RECOVERY_TEMPLATE  Resend template id or alias for password resets
+//   RESEND_TEMPLATE           Resend template id or alias, used for both
+//                             invites and password resets
 //   RESEND_FROM               optional, e.g. "LC Basketball <noreply@lcbasketball.com>";
-//                             only needed if the templates don't set a sender
-// Templates get these variables: ACTION_URL (the sign-in link), EMAIL,
-// DISPLAY_NAME and ROLE (blank when unknown).
+//                             only needed if the template doesn't set a sender
+// The template gets these variables: ACTION_URL (the sign-in link), EMAIL,
+// DISPLAY_NAME and ROLE (blank when unknown), plus SUBJECT, HEADING, MESSAGE
+// and BUTTON_TEXT, which differ between an invite and a reset.
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
 
 interface HookPayload {
@@ -69,29 +70,44 @@ async function send({ user, email_data: d }: HookPayload) {
   link.searchParams.set('redirect_to', d.redirect_to || d.site_url)
   const actionUrl = link.toString()
 
-  const templates: Record<string, string | undefined> = {
-    invite: Deno.env.get('RESEND_INVITE_TEMPLATE'),
-    recovery: Deno.env.get('RESEND_RECOVERY_TEMPLATE'),
+  // The words that differ between an invite and a reset, so one template
+  // serves both.
+  const copy: Record<string, Record<string, string>> = {
+    invite: {
+      SUBJECT: "You're invited to LC Basketball",
+      HEADING: "You're invited",
+      MESSAGE: 'You have been invited to LC Basketball. Choose a password to finish setting up your account.',
+      BUTTON_TEXT: 'Accept invite',
+    },
+    recovery: {
+      SUBJECT: 'Reset your LC Basketball password',
+      HEADING: 'Reset your password',
+      MESSAGE: "Someone asked to reset the password for this account. If it wasn't you, ignore this email.",
+      BUTTON_TEXT: 'Choose a new password',
+    },
   }
-  const template = templates[d.email_action_type]
+  const words = copy[d.email_action_type]
+  // RESEND_INVITE_TEMPLATE is the older name for the same setting.
+  const template = Deno.env.get('RESEND_TEMPLATE') ?? Deno.env.get('RESEND_INVITE_TEMPLATE')
   const from = Deno.env.get('RESEND_FROM')
 
   let email: Record<string, unknown>
-  if (template) {
+  if (words) {
+    if (!template) throw new Error('Set RESEND_TEMPLATE to the Resend template id (see send-email/index.ts).')
     email = {
       to: [user.email],
       template: {
         id: template,
         variables: {
+          ...words,
           ACTION_URL: actionUrl,
           EMAIL: user.email,
           DISPLAY_NAME: user.user_metadata?.display_name ?? '',
-          ROLE: user.user_metadata?.role ?? '',
+          // No role means a dashboard invite, which handle_new_user makes a coach.
+          ROLE: user.user_metadata?.role || 'coach',
         },
       },
     }
-  } else if (d.email_action_type in templates) {
-    throw new Error(`Set the Resend template for ${d.email_action_type} emails (see send-email/index.ts).`)
   } else {
     // Sign-up is off, so the app never asks for these; once the hook is on,
     // Auth still routes them here, so send something usable rather than fail.
